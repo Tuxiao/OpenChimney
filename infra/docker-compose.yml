@@ -1,0 +1,96 @@
+services:
+  api:
+    image: sqlite-service-kit-api:${APP_VERSION:-latest}
+    build:
+      context: ../apps/api
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      API_WORKERS: ${API_WORKERS:-1}
+      DATABASE_URL: sqlite:////data/app.db
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      RUNNER_API_KEY: ${RUNNER_API_KEY:?set RUNNER_API_KEY in .env}
+      DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL:-admin@example.com}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:?set DEFAULT_ADMIN_PASSWORD in .env}
+    volumes:
+      - sqlite_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).read()"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    mem_limit: ${API_MEM_LIMIT:-768m}
+    networks:
+      - app
+
+  web:
+    image: sqlite-service-kit-web:${APP_VERSION:-latest}
+    build:
+      context: ../apps/web
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    ports:
+      - "${WEB_PORT:-80}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    mem_limit: ${WEB_MEM_LIMIT:-128m}
+    networks:
+      - app
+
+  runner:
+    image: sqlite-service-kit-runner:${APP_VERSION:-latest}
+    build:
+      context: ../apps/runner
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      RUNNER_API_BASE_URL: http://api:8000
+      RUNNER_API_KEY: ${RUNNER_API_KEY:?set RUNNER_API_KEY in .env}
+      RUNNER_NAME: ${RUNNER_NAME:-runner-01}
+      RUNNER_AGENT_RUNTIME: ${RUNNER_AGENT_RUNTIME:-hermes}
+      RUNNER_CAPABILITIES: ${RUNNER_CAPABILITIES:-ai.agent.v1,ai.chat}
+      RUNNER_MAX_CONCURRENCY: ${RUNNER_MAX_CONCURRENCY:-1}
+      HERMES_HOME: ${HERMES_HOME:-/runner/.hermes}
+      HERMES_WORKSPACE_ROOT: ${HERMES_WORKSPACE_ROOT:-/runner/workspaces}
+      HERMES_MODEL: ${HERMES_MODEL:-anthropic/claude-sonnet-4.6}
+      HERMES_PROVIDER: ${HERMES_PROVIDER:-}
+      HERMES_BASE_URL: ${HERMES_BASE_URL:-}
+      HERMES_API_KEY: ${HERMES_API_KEY:-}
+      HERMES_MAX_ITERATIONS: ${HERMES_MAX_ITERATIONS:-20}
+      HERMES_DEFAULT_TOOLSETS: ${HERMES_DEFAULT_TOOLSETS:-safe}
+      HERMES_ALLOWED_TOOLSETS: ${HERMES_ALLOWED_TOOLSETS:-safe,web,search,vision,image_gen,mcp-sqlite-service}
+      HERMES_MEMORY_MODE: ${HERMES_MEMORY_MODE:-tenant}
+      HERMES_TIMEOUT_SECONDS: ${HERMES_TIMEOUT_SECONDS:-300}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sqlite-service-runner", "config"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    mem_limit: ${RUNNER_MEM_LIMIT:-1536m}
+    networks:
+      - app
+
+networks:
+  app:
+    driver: bridge
+
+volumes:
+  sqlite_data:
