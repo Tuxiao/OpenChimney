@@ -24,7 +24,7 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
                 seed_data(db, app_config)
         yield
 
-    app = FastAPI(title="SQLite Service Kit API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="OpenChimney API", version="0.1.0", lifespan=lifespan)
     app.state.config = app_config
     app.state.engine = create_db_engine(app_config.database_url)
     app.state.SessionLocal = create_session_factory(app.state.engine)

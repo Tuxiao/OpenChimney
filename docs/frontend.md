@@ -1,6 +1,6 @@
 # Frontend
 
-The web app lives in `apps/web` and is an isolated React + Vite + TypeScript frontend for SQLite Service Kit.
+The web app lives in `apps/web` and is an isolated React + Vite + TypeScript frontend for OpenChimney.
 
 ## Scope
 

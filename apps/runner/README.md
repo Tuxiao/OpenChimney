@@ -1,6 +1,6 @@
-# SQLite Service Kit Runner
+# OpenChimney Runner
 
-Independent Python task runner for SQLite Service Kit. The runner never opens or reads SQLite directly. It talks only to the API over HTTP, authenticating every request with `X-Runner-Key`.
+Independent Python task runner for OpenChimney. The runner never opens or reads SQLite directly. It talks only to the API over HTTP, authenticating every request with `X-Runner-Key`.
 
 ## Responsibilities
 
@@ -250,7 +250,7 @@ Example systemd unit:
 
 ```ini
 [Unit]
-Description=SQLite Service Kit Runner
+Description=OpenChimney Runner
 After=network-online.target
 Wants=network-online.target
 

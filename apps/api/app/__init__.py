@@ -1,2 +1,1 @@
-"""SQLite Service Kit API package."""
-
+"""OpenChimney API package."""

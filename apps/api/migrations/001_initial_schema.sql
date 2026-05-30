@@ -1,3 +1,3 @@
--- SQLite Service Kit initial schema is defined by SQLAlchemy models in app/models.py.
+-- OpenChimney initial schema is defined by SQLAlchemy models in app/models.py.
 -- The application startup calls Base.metadata.create_all() through app/migrations.py.
 -- This file anchors the first template migration for projects that later adopt Alembic.

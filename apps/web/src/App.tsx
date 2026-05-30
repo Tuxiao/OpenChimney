@@ -111,7 +111,7 @@ function ProductHeader({ route, onNavigate, authed }: { route: Route; onNavigate
           <span className="grid size-8 place-items-center border border-ink bg-ink text-paper">
             <Database size={16} />
           </span>
-          <span className="text-base font-semibold">SQLite Service Kit</span>
+          <span className="text-base font-semibold">OpenChimney</span>
         </button>
         <nav className="hidden items-center gap-7 text-sm md:flex">
           <button className={route === "landing" ? "font-semibold text-ink" : "text-muted hover:text-ink"} onClick={() => onNavigate("landing")}>Landing</button>
@@ -155,8 +155,8 @@ function AuthenticatedHeader({
             <Database size={16} />
           </span>
           <span>
-            <span className="block text-sm font-semibold leading-4">SQLite Service Kit</span>
-            <span className="block text-[11px] leading-4 text-muted">Product console</span>
+            <span className="block text-sm font-semibold leading-4">OpenChimney</span>
+            <span className="block text-[11px] leading-4 text-muted">AI service console</span>
           </span>
         </button>
         <nav className="flex items-center gap-1 text-sm">
@@ -186,10 +186,10 @@ function LandingPage({ onGetStarted, onPricing }: { onGetStarted: () => void; on
         <div className="mx-auto grid min-h-[520px] max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1fr_520px] lg:items-center">
           <div className="max-w-2xl">
             <h1 className="max-w-xl text-4xl font-semibold leading-tight tracking-normal text-ink sm:text-5xl">
-              SQLite backend template with consoles and a REST polling runner.
+              AI service scaffold for publishing agent Skills online.
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-muted">
-              A compact starter for local accounts, roles, orders, tasks, Hermes-backed agent jobs, SQLite operations, and a runner that pulls work through ordinary HTTP routes.
+              A compact starter for multi-user login, task queues, Hermes-backed agent jobs, SQLite operations, admin review, and Docker deployment on one small server.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <button className="btn-primary" onClick={onGetStarted}>
@@ -561,7 +561,7 @@ function ProductFooter({ onNavigate }: { onNavigate: (route: Route) => void }) {
               <span className="grid size-9 place-items-center border border-paper bg-paper text-ink">
                 <Database size={17} />
               </span>
-              <span className="text-base font-semibold">SQLite Service Kit</span>
+              <span className="text-base font-semibold">OpenChimney</span>
             </div>
             <p className="mt-4 max-w-sm text-sm leading-6 text-[#c7ced8]">
               SQLite-first starter for public acquisition, user console workflows, super admin operations, REST API, and remote AI task runners.
@@ -580,7 +580,7 @@ function ProductFooter({ onNavigate }: { onNavigate: (route: Route) => void }) {
         </div>
 
         <div className="flex flex-col gap-3 border-t border-white/10 py-5 text-xs text-[#aeb8c5] sm:flex-row sm:items-center sm:justify-between">
-          <p>(c) 2026 SQLite Service Kit. Template code for local-first products.</p>
+          <p>(c) 2026 OpenChimney. AI service engineering scaffold for local-first products.</p>
           <div className="flex flex-wrap gap-4">
             <a className="hover:text-paper" href="#docs">Privacy</a>
             <a className="hover:text-paper" href="#docs">Terms</a>

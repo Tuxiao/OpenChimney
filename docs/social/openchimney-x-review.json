@@ -1,0 +1,50 @@
+{
+  "title": "OpenChimney X Post Approval Draft",
+  "status": "Needs approval",
+  "persona": "Chinese-speaking practical AI builder and product engineer",
+  "primary_tweet": "把 OpenChimney 推到 GitHub 了。它本质是一个 AI 服务工程脚手架：把 agent Skill 包成多用户线上服务，自带登录、任务队列、用户/超管控制台、SQLite、REST runner 和 Docker 部署。真正省下来的，是每次发布 AI 小服务前那套重复工程。",
+  "alternate_tweets": [
+    {
+      "label": "More technical",
+      "text": "OpenChimney 已开源：一个用来发布 agent Skill 的 AI 服务工程脚手架。API 独占 SQLite，runner 只通过 REST claim/heartbeat/complete/fail 通信；前面则自带用户登录、任务系统、超管控制台和 Docker 单机部署。"
+    },
+    {
+      "label": "Shorter",
+      "text": "今天把 OpenChimney 整理成公开仓库：把 agent Skill 从本地工作流推进到多用户线上服务。登录、任务队列、用户/超管控制台、SQLite、REST runner、Docker 部署都在一个脚手架里。"
+    }
+  ],
+  "image_generation_plan": {
+    "needed": false,
+    "status": "Not needed",
+    "concept": "",
+    "format": "",
+    "style": "",
+    "composition": "",
+    "source_facts": [],
+    "prompt": "",
+    "safety_exclusions": []
+  },
+  "selected_media": [
+    {
+      "path": "/Users/craig/⭐️VIBE/SQLite项目【Landing页面+user:member|order|task|chat后段管理服务+用户控制台+超管admin控制台】/docs/assets/openchimney-system-home.png",
+      "alt_text": "OpenChimney landing page showing an AI service scaffold headline, runtime snapshot, and module cards.",
+      "reason": "Shows the main system UI after the OpenChimney branding update, without exposing private admin data."
+    }
+  ],
+  "context_used": [
+    "Current Codex thread created the OpenChimney GitHub repository and pushed the initial scaffold.",
+    "The project is positioned as an AI service engineering scaffold for publishing agent Skills as multi-user online services.",
+    "Browser screenshot captured the updated public landing page from the local Docker deployment."
+  ],
+  "redactions_and_exclusions": [
+    "Private local filesystem paths are not included in the tweet text.",
+    "No credentials, .env values, account data, or admin-only task records are included.",
+    "The screenshot uses the public landing page rather than authenticated consoles."
+  ],
+  "publish_plan": {
+    "route": "unknown",
+    "account_hint": "",
+    "notes": "This draft is for user approval only. Do not publish to X until the user explicitly approves the final text and selected media."
+  },
+  "approval_instructions": "确认后回复“发布”或给出修改后的最终推文；未确认前不要自动发布到 X。"
+}

@@ -1,6 +1,6 @@
 # API Backend
 
-FastAPI backend template for SQLite Service Kit.
+FastAPI backend template for OpenChimney.
 
 ## Run Locally
 

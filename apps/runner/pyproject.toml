@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "sqlite-service-kit-runner"
 version = "0.1.0"
-description = "Independent REST-polling task runner for SQLite Service Kit"
+description = "Independent REST-polling task runner for OpenChimney"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

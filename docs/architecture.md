@@ -1,6 +1,6 @@
 # Architecture
 
-SQLite Service Kit is a single-owner SQLite architecture:
+OpenChimney uses a single-owner SQLite architecture:
 
 - `apps/api` is the only process that reads or writes SQLite.
 - `apps/web` talks to the API with JSON REST endpoints.

@@ -1,4 +1,4 @@
-"""REST-polling runner service for SQLite Service Kit."""
+"""REST-polling runner service for OpenChimney."""
 
 __all__ = ["__version__"]
 

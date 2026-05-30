@@ -414,7 +414,7 @@ class HermesAgentRuntime:
             messages = [{"role": "user", "content": str(prompt)}]
 
         lines = [
-            "You are the SQLite Service Kit task assistant.",
+            "You are the OpenChimney task assistant.",
             "Reply to the latest user message. Do not claim to have used tools unless the job explicitly enables them.",
         ]
         if messages:
@@ -443,7 +443,7 @@ class HermesAgentRuntime:
             "output_schema": output_schema,
         }
         return (
-            "Execute this SQLite Service Kit agent job.\n"
+            "Execute this OpenChimney agent job.\n"
             "Respect the runner boundary: use only enabled tools, never assume direct SQLite access, "
             "and return the final user-facing answer as plain assistant text.\n\n"
             f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
@@ -697,9 +697,9 @@ def _safe_path_part(value: str) -> str:
 
 
 def _workspace_context() -> str:
-    return """# SQLite Service Kit Runner Agent
+    return """# OpenChimney Runner Agent
 
-You are running inside a controlled job workspace for SQLite Service Kit.
+You are running inside a controlled job workspace for OpenChimney.
 
 - The API is the only process that may read or write SQLite.
 - The runner must use only explicitly enabled tools.

@@ -1,7 +1,7 @@
 [project]
 name = "sqlite-service-kit-api"
 version = "0.1.0"
-description = "FastAPI + SQLAlchemy + SQLite backend template for SQLite Service Kit."
+description = "FastAPI + SQLAlchemy + SQLite backend template for OpenChimney."
 requires-python = ">=3.9"
 dependencies = [
   "fastapi>=0.115,<1.0",

@@ -12,7 +12,7 @@ from .worker import RunnerWorker
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="SQLite Service Kit REST task runner")
+    parser = argparse.ArgumentParser(description="OpenChimney REST task runner")
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("run", help="Poll the API forever and execute jobs")
     subparsers.add_parser("once", help="Poll once and exit")

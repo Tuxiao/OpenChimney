@@ -16,6 +16,8 @@ The name comes from the core boundary: agent work goes through one visible,
 auditable chimney. The API owns SQLite, and the runner only talks to the API
 through claim, heartbeat, complete, fail, and config endpoints.
 
+![OpenChimney system home](docs/assets/openchimney-system-home.png)
+
 ## What You Get
 
 - AI service scaffold: product pages, auth, API, database, task queue, runner,
