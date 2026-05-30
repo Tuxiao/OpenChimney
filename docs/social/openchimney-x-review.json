@@ -2,15 +2,15 @@
   "title": "OpenChimney X Post Approval Draft",
   "status": "Needs approval",
   "persona": "Chinese-speaking practical AI builder and product engineer",
-  "primary_tweet": "很多 agent Skill 做到 demo 就卡住：没有登录、任务队列、后台、运行器隔离和上线脚手架。OpenChimney 解决的是这段工程空白。适合你已经有一个可用 Skill，想把它变成小规模多用户线上服务，用 Docker 快速部署，并保留用户/任务/超管管理。",
+  "primary_tweet": "很多 agent Skill 做到 demo 就卡住：没有登录、任务队列、后台、运行器隔离和上线脚手架。OpenChimney 解决的是这段工程空白。适合你已经有一个可用 Skill，想把它变成小规模多用户线上服务，用 Docker 快速部署，并保留用户/任务/超管管理。\n\nhttps://github.com/Tuxiao/OpenChimney",
   "alternate_tweets": [
     {
       "label": "More technical",
-      "text": "什么时候用 OpenChimney：你有一个本地 agent Skill/工作流，准备给多人使用，但不想重写账号、任务队列、admin、SQLite 持久化和 runner 部署。它把 AI 能力放进一个可上线的小型服务骨架，API 管数据，runner 只走 REST。"
+      "text": "什么时候用 OpenChimney：你有一个本地 agent Skill/工作流，准备给多人使用，但不想重写账号、任务队列、admin、SQLite 持久化和 runner 部署。它把 AI 能力放进一个可上线的小型服务骨架，API 管数据，runner 只走 REST。\n\nhttps://github.com/Tuxiao/OpenChimney"
     },
     {
       "label": "Shorter",
-      "text": "OpenChimney 不是再做一个聊天 demo，而是补 AI 服务上线前最麻烦的一层：用户、任务、后台、SQLite、runner 边界和 Docker 部署。适合把已经跑通的 agent Skill 发布成小规模线上服务。"
+      "text": "OpenChimney 不是再做一个聊天 demo，而是补 AI 服务上线前最麻烦的一层：用户、任务、后台、SQLite、runner 边界和 Docker 部署。适合把已经跑通的 agent Skill 发布成小规模线上服务。\n\nhttps://github.com/Tuxiao/OpenChimney"
     }
   ],
   "image_generation_plan": {
