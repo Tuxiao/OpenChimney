@@ -1,28 +1,28 @@
 # OpenChimney X Post Approval Draft
 
-- Status: Needs approval
-- Created: 2026-05-30T12:42:48+00:00
-- Persona: Chinese-speaking practical AI builder and product engineer
+- Status: Published
+- Created: 2026-05-30T12:52:39+00:00
+- Persona: Practical AI builder and product engineer writing in English
 
 ## Primary Tweet
 
-很多 agent Skill 做到 demo 就卡住：没有登录、任务队列、后台、运行器隔离和上线脚手架。OpenChimney 解决的是这段工程空白。适合你已经有一个可用 Skill，想把它变成小规模多用户线上服务，用 Docker 快速部署，并保留用户/任务/超管管理。 https://github.com/Tuxiao/OpenChimney
+Use OpenChimney when an agent Skill works locally but still needs auth, queues, admin, persistence, runner isolation, and Docker deployment. It's an open-source AI service scaffold for turning Skills into small multi-user online services. https://github.com/Tuxiao/OpenChimney
 
-Character count: 174/280
+Character count: 276/280
 
 ## Alternate Tweets
 
 ### More technical
 
-什么时候用 OpenChimney：你有一个本地 agent Skill/工作流，准备给多人使用，但不想重写账号、任务队列、admin、SQLite 持久化和 runner 部署。它把 AI 能力放进一个可上线的小型服务骨架，API 管数据，runner 只走 REST。 https://github.com/Tuxiao/OpenChimney
+Agent Skills often stall after the demo: auth, task queues, admin, runner isolation, persistence, and deployment still need to be built. OpenChimney turns a working Skill into a small multi-user online service with Docker. https://github.com/Tuxiao/OpenChimney
 
-Character count: 174/280
+Character count: 260/280
 
 ### Shorter
 
-OpenChimney 不是再做一个聊天 demo，而是补 AI 服务上线前最麻烦的一层：用户、任务、后台、SQLite、runner 边界和 Docker 部署。适合把已经跑通的 agent Skill 发布成小规模线上服务。 https://github.com/Tuxiao/OpenChimney
+OpenChimney is for the gap after an agent Skill demo works: auth, task queues, admin, persistence, runner isolation, and deployment. It turns a working Skill into a small multi-user online service with Docker. https://github.com/Tuxiao/OpenChimney
 
-Character count: 152/280
+Character count: 247/280
 
 ## Generated Image Plan
 
@@ -52,9 +52,9 @@ None.
 
 ## Publish Checklist
 
-- Route: unknown
-- Account: Not specified
-- Notes: This draft is for user approval only. Do not publish to X until the user explicitly approves the final text and selected media.
+- Route: Chrome browser automation against logged-in X session
+- Account: @chen_craig85526
+- Notes: The previous Chinese post was deleted. The English version was published with the selected media: https://x.com/chen_craig85526/status/2060705820506194237
 - Confirmed generated image plan: Not needed
 - Confirmed final tweet text: No
 - Confirmed selected media: No
@@ -62,4 +62,4 @@ None.
 
 ## Approval Instructions
 
-确认后回复“发布”或给出修改后的最终推文；未确认前不要自动发布到 X。
+Published. Do not republish unless the user explicitly requests it.
