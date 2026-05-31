@@ -9,6 +9,67 @@ from .models import AppSetting
 
 HERMES_SETTING_KEY = "runner.hermes.config"
 
+ALL_HERMES_TOOLSETS: list[str] = [
+    "browser",
+    "clarify",
+    "code_execution",
+    "computer_use",
+    "context_engine",
+    "cronjob",
+    "debugging",
+    "delegation",
+    "discord",
+    "discord_admin",
+    "feishu_doc",
+    "feishu_drive",
+    "file",
+    "hermes-acp",
+    "hermes-api-server",
+    "hermes-bluebubbles",
+    "hermes-cli",
+    "hermes-cron",
+    "hermes-dingtalk",
+    "hermes-discord",
+    "hermes-email",
+    "hermes-feishu",
+    "hermes-gateway",
+    "hermes-homeassistant",
+    "hermes-matrix",
+    "hermes-mattermost",
+    "hermes-qqbot",
+    "hermes-signal",
+    "hermes-slack",
+    "hermes-sms",
+    "hermes-telegram",
+    "hermes-webhook",
+    "hermes-wecom",
+    "hermes-wecom-callback",
+    "hermes-weixin",
+    "hermes-whatsapp",
+    "hermes-yuanbao",
+    "homeassistant",
+    "image_gen",
+    "kanban",
+    "memory",
+    "messaging",
+    "moa",
+    "safe",
+    "search",
+    "session_search",
+    "skills",
+    "spotify",
+    "terminal",
+    "todo",
+    "tts",
+    "video",
+    "video_gen",
+    "vision",
+    "web",
+    "x_search",
+    "yuanbao",
+]
+EXTRA_ALLOWED_TOOLSETS: list[str] = ["mcp-sqlite-service"]
+
 DEFAULT_HERMES_CONFIG: dict[str, Any] = {
     "enabled": True,
     "model": "anthropic/claude-sonnet-4.6",
@@ -18,8 +79,8 @@ DEFAULT_HERMES_CONFIG: dict[str, Any] = {
     "task_root": "/runner/workspaces",
     "hermes_home": "/runner/.hermes",
     "max_iterations": 20,
-    "default_toolsets": ["safe"],
-    "allowed_toolsets": ["safe", "web", "search", "vision", "image_gen", "mcp-sqlite-service"],
+    "default_toolsets": ALL_HERMES_TOOLSETS,
+    "allowed_toolsets": [*ALL_HERMES_TOOLSETS, *EXTRA_ALLOWED_TOOLSETS],
     "memory_mode": "tenant",
     "timeout_seconds": 300,
 }
@@ -37,8 +98,11 @@ def merged_hermes_config(value: Optional[dict[str, Any]]) -> dict[str, Any]:
     config = default_hermes_config()
     if isinstance(value, dict):
         config.update({key: value for key, value in value.items() if key in config})
-    config["default_toolsets"] = _list_value(config.get("default_toolsets"))
-    config["allowed_toolsets"] = _list_value(config.get("allowed_toolsets"))
+    config["default_toolsets"] = _ensure_all_toolsets(_list_value(config.get("default_toolsets")))
+    config["allowed_toolsets"] = _ensure_all_toolsets(
+        _list_value(config.get("allowed_toolsets")),
+        extras=EXTRA_ALLOWED_TOOLSETS,
+    )
     config["provider"] = _optional_str(config.get("provider"))
     config["base_url"] = _optional_str(config.get("base_url"))
     config["api_key"] = _optional_str(config.get("api_key"))
@@ -96,3 +160,11 @@ def _list_value(value: object) -> list[str]:
     if isinstance(value, str):
         return [item.strip() for item in value.split(",") if item.strip()]
     return []
+
+
+def _ensure_all_toolsets(toolsets: list[str], extras: list[str] | None = None) -> list[str]:
+    merged = list(dict.fromkeys(toolsets))
+    for toolset in [*ALL_HERMES_TOOLSETS, *(extras or [])]:
+        if toolset not in merged:
+            merged.append(toolset)
+    return merged

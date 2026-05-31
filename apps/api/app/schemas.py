@@ -349,6 +349,12 @@ class RunnerCompleteIn(BaseModel):
     )
 
 
+class RunnerJobEventIn(BaseModel):
+    event_type: str = Field(min_length=1, max_length=80)
+    message: Optional[str] = None
+    data_json: dict[str, Any] = Field(default_factory=dict)
+
+
 class RunnerFailIn(BaseModel):
     model_config = {"populate_by_name": True}
 

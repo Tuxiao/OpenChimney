@@ -1,5 +1,7 @@
 # OpenChimney
 
+Current version: **v0.1.0**
+
 OpenChimney is an AI service engineering scaffold. It turns an agent Skill into
 a small multi-user online service and ships with the product, backend, task, and
 operations layers most agent demos are missing: public pages, local login, a
@@ -17,6 +19,32 @@ auditable chimney. The API owns SQLite, and the runner only talks to the API
 through claim, heartbeat, complete, fail, and config endpoints.
 
 ![OpenChimney system home](docs/assets/openchimney-system-home.png)
+
+## Version History
+
+| Version | Date | Notes |
+| --- | --- | --- |
+| v0.1.0 | 2026-05-31 | First tracked OpenChimney baseline: public landing/pricing pages, local login, user console, super admin console, SQLite-owned FastAPI backend, REST task runner, Hermes runtime config, Docker deployment, and project-owned version metadata. |
+
+## Versioning
+
+`VERSION` is the project version source of truth. Keep package metadata,
+runtime constants, environment templates, and UI display values in sync with:
+
+```bash
+npm run version:sync
+```
+
+Check that every version-bearing file matches `VERSION` before release:
+
+```bash
+npm run version:check
+```
+
+Docker images are tagged with `APP_VERSION`, and the example env files default
+that value to the current project version. The API exposes the running version
+from `GET /api/version` and `GET /api/health`; the runner includes the same
+version in its heartbeat payload.
 
 ## What You Get
 
@@ -284,7 +312,6 @@ contains:
   "session_id": "conversation-2",
   "resume": true,
   "output_schema": "assistant_message.v1",
-  "toolsets": [],
   "messages": [
     {
       "role": "user",

@@ -102,3 +102,4 @@ def test_phone_password_login_rejects_sms_only_account(client):
         json={"phone": "+8613800000000", "password": "password123"},
     )
     assert password_login.status_code == 401
+    assert password_login.json()["detail"] == "Password is not set for this phone. Sign in with SMS first."

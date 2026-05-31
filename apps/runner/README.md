@@ -51,8 +51,8 @@ export HERMES_API_KEY=""
 export HERMES_HOME="/runner/.hermes"
 export HERMES_WORKSPACE_ROOT="/runner/workspaces"
 export HERMES_MAX_ITERATIONS="20"
-export HERMES_DEFAULT_TOOLSETS="safe"
-export HERMES_ALLOWED_TOOLSETS="safe,web,search,vision,image_gen,mcp-sqlite-service"
+export HERMES_DEFAULT_TOOLSETS=""
+export HERMES_ALLOWED_TOOLSETS=""
 export HERMES_MEMORY_MODE="tenant"
 export HERMES_TIMEOUT_SECONDS="300"
 ```
@@ -62,12 +62,17 @@ console Hermes settings page, which stores model, provider, base URL, task root,
 Hermes home, toolsets, and optional API key in SQLite. On `run` and `once`, the
 runner first calls `POST /api/runner/config/hermes`, then initializes Hermes from
 that database-backed config. Environment variables remain startup fallbacks.
+The Docker runner image includes Chromium, agent-browser, and `ddgs`, so the
+default browser and web search/extract tools are available without installing a
+browser or configuring a paid search backend.
 
 Each Hermes job is initialized in a dedicated workspace under the configured
 task root. The runner prefers stable task directories such as
 `/runner/workspaces/task-123`; if a task id is unavailable, it falls back to
 `conversation-<id>` and then `job-<id>`. Workspace initialization creates
-`.hermes.md`, `AGENTS.md`, `workspace.json`, `artifacts/`, `logs/`, and `tmp/`.
+`.hermes.md`, `AGENTS.md`, `soul.md`, `workspace.json`, `artifacts/`, `logs/`, and `tmp/`.
+The runner also writes the same identity file to `HERMES_HOME/SOUL.md`, which
+Hermes reads as the agent identity context.
 
 Conversation resume is enabled by default. Jobs with the same conversation id
 use the same Hermes `session_id` (`conversation-<id>`), and task jobs use a
@@ -121,8 +126,8 @@ Response includes the runtime settings the runner applies at startup:
   "task_root": "/runner/workspaces",
   "hermes_home": "/runner/.hermes",
   "max_iterations": 20,
-  "default_toolsets": ["safe"],
-  "allowed_toolsets": ["safe", "web"],
+  "default_toolsets": ["hermes-cli", "browser", "web", "skills", "terminal", "file"],
+  "allowed_toolsets": ["all Hermes built-in toolsets", "mcp-sqlite-service"],
   "memory_mode": "tenant",
   "timeout_seconds": 300
 }
@@ -170,7 +175,6 @@ Claimed job response:
       "messages": [
         {"role": "user", "content": "Hello"}
       ],
-      "toolsets": [],
       "output_schema": "assistant_message.v1"
     },
     "attempt": 1
@@ -213,7 +217,7 @@ The client also accepts `job_id`/`task_id` and `job_type`/`task_type` aliases.
     "usage": {},
     "metadata": {
       "task_kind": "ai.chat",
-      "toolsets": [],
+      "toolsets": ["all enabled Hermes built-in toolsets"],
       "iterations": 0,
       "workspace_id": "task-123",
       "session_id": "conversation-456",
@@ -266,7 +270,7 @@ Environment=RUNNER_CAPABILITIES=ai.agent.v1,ai.chat
 Environment=HERMES_MODEL=anthropic/claude-sonnet-4.6
 Environment=HERMES_HOME=/opt/sqlite-service-kit/apps/runner/.hermes
 Environment=HERMES_MAX_ITERATIONS=20
-Environment=HERMES_DEFAULT_TOOLSETS=safe
+Environment=HERMES_DEFAULT_TOOLSETS=
 Environment=HERMES_MEMORY_MODE=tenant
 Environment=HERMES_TIMEOUT_SECONDS=300
 Environment=RUNNER_LOG_LEVEL=INFO

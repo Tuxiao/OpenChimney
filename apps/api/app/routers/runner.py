@@ -21,6 +21,7 @@ from ..schemas import (
     RunnerClaimIn,
     RunnerCompleteIn,
     RunnerFailIn,
+    RunnerJobEventIn,
     RunnerJobOut,
     RunnerNodeIn,
     RunnerNodeOut,
@@ -175,6 +176,27 @@ def job_heartbeat(
     db.commit()
     db.refresh(job)
     return job
+
+
+@router.post("/jobs/{job_id}/events", status_code=status.HTTP_201_CREATED)
+def append_job_event(
+    job_id: int,
+    payload: RunnerJobEventIn,
+    db: Annotated[Session, Depends(get_db)],
+    _runner_key: Annotated[None, Depends(require_runner_key)],
+) -> dict[str, Any]:
+    job = db.get(RunnerJob, job_id)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Runner job not found")
+    add_job_event(
+        db,
+        job,
+        payload.event_type,
+        message=payload.message,
+        data_json=payload.data_json,
+    )
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/jobs/{job_id}/complete", response_model=RunnerJobOut)

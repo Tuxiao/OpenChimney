@@ -46,6 +46,7 @@ def _print_config(config: RunnerConfig) -> None:
     payload = {
         "api_base_url": config.api_base_url,
         "api_prefix": config.api_prefix,
+        "version": config.version,
         "runner_id": config.runner_id,
         "capabilities": config.capabilities,
         "poll_interval_seconds": config.poll_interval_seconds,

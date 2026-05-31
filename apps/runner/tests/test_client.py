@@ -152,3 +152,34 @@ async def test_client_fetches_hermes_config() -> None:
     assert seen == [("/api/runner/config/hermes", {"runner_id": "runner-test"})]
     assert hermes_config["model"] == "openai/gpt-4.1"
     assert hermes_config["api_key"] == "secret"
+
+
+@pytest.mark.asyncio
+async def test_client_reports_job_event() -> None:
+    seen: list[tuple[str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.url.path, json.loads(request.content.decode() or "{}")))
+        assert request.headers["X-Runner-Key"] == "secret"
+        return httpx.Response(201, json={"ok": True})
+
+    config = RunnerConfig.for_tests(runner_key="secret")
+    async with RunnerApiClient(config, transport=httpx.MockTransport(handler)) as client:
+        await client.report_job_event(
+            "42",
+            "hermes.thinking",
+            message="Thinking",
+            data={"phase": "model"},
+        )
+
+    assert seen == [
+        (
+            "/api/runner/jobs/42/events",
+            {
+                "runner_id": "runner-test",
+                "event_type": "hermes.thinking",
+                "message": "Thinking",
+                "data_json": {"phase": "model"},
+            },
+        )
+    ]

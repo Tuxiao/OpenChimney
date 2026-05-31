@@ -74,8 +74,8 @@ services:
       HERMES_BASE_URL: ${HERMES_BASE_URL:-}
       HERMES_API_KEY: ${HERMES_API_KEY:-}
       HERMES_MAX_ITERATIONS: ${HERMES_MAX_ITERATIONS:-20}
-      HERMES_DEFAULT_TOOLSETS: ${HERMES_DEFAULT_TOOLSETS:-safe}
-      HERMES_ALLOWED_TOOLSETS: ${HERMES_ALLOWED_TOOLSETS:-safe,web,search,vision,image_gen,mcp-sqlite-service}
+      HERMES_DEFAULT_TOOLSETS: ${HERMES_DEFAULT_TOOLSETS:-browser,clarify,code_execution,computer_use,context_engine,cronjob,debugging,delegation,discord,discord_admin,feishu_doc,feishu_drive,file,hermes-acp,hermes-api-server,hermes-bluebubbles,hermes-cli,hermes-cron,hermes-dingtalk,hermes-discord,hermes-email,hermes-feishu,hermes-gateway,hermes-homeassistant,hermes-matrix,hermes-mattermost,hermes-qqbot,hermes-signal,hermes-slack,hermes-sms,hermes-telegram,hermes-webhook,hermes-wecom,hermes-wecom-callback,hermes-weixin,hermes-whatsapp,hermes-yuanbao,homeassistant,image_gen,kanban,memory,messaging,moa,safe,search,session_search,skills,spotify,terminal,todo,tts,video,video_gen,vision,web,x_search,yuanbao}
+      HERMES_ALLOWED_TOOLSETS: ${HERMES_ALLOWED_TOOLSETS:-browser,clarify,code_execution,computer_use,context_engine,cronjob,debugging,delegation,discord,discord_admin,feishu_doc,feishu_drive,file,hermes-acp,hermes-api-server,hermes-bluebubbles,hermes-cli,hermes-cron,hermes-dingtalk,hermes-discord,hermes-email,hermes-feishu,hermes-gateway,hermes-homeassistant,hermes-matrix,hermes-mattermost,hermes-qqbot,hermes-signal,hermes-slack,hermes-sms,hermes-telegram,hermes-webhook,hermes-wecom,hermes-wecom-callback,hermes-weixin,hermes-whatsapp,hermes-yuanbao,homeassistant,image_gen,kanban,memory,messaging,moa,safe,search,session_search,skills,spotify,terminal,todo,tts,video,video_gen,vision,web,x_search,yuanbao,mcp-sqlite-service}
       HERMES_MEMORY_MODE: ${HERMES_MEMORY_MODE:-tenant}
       HERMES_TIMEOUT_SECONDS: ${HERMES_TIMEOUT_SECONDS:-300}
     depends_on:

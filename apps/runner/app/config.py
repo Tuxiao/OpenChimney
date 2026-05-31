@@ -6,6 +6,69 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from . import __version__
+
+ALL_HERMES_TOOLSETS = [
+    "browser",
+    "clarify",
+    "code_execution",
+    "computer_use",
+    "context_engine",
+    "cronjob",
+    "debugging",
+    "delegation",
+    "discord",
+    "discord_admin",
+    "feishu_doc",
+    "feishu_drive",
+    "file",
+    "hermes-acp",
+    "hermes-api-server",
+    "hermes-bluebubbles",
+    "hermes-cli",
+    "hermes-cron",
+    "hermes-dingtalk",
+    "hermes-discord",
+    "hermes-email",
+    "hermes-feishu",
+    "hermes-gateway",
+    "hermes-homeassistant",
+    "hermes-matrix",
+    "hermes-mattermost",
+    "hermes-qqbot",
+    "hermes-signal",
+    "hermes-slack",
+    "hermes-sms",
+    "hermes-telegram",
+    "hermes-webhook",
+    "hermes-wecom",
+    "hermes-wecom-callback",
+    "hermes-weixin",
+    "hermes-whatsapp",
+    "hermes-yuanbao",
+    "homeassistant",
+    "image_gen",
+    "kanban",
+    "memory",
+    "messaging",
+    "moa",
+    "safe",
+    "search",
+    "session_search",
+    "skills",
+    "spotify",
+    "terminal",
+    "todo",
+    "tts",
+    "video",
+    "video_gen",
+    "vision",
+    "web",
+    "x_search",
+    "yuanbao",
+]
+EXTRA_ALLOWED_TOOLSETS = ["mcp-sqlite-service"]
+
 
 def _float_env(name: str, default: float) -> float:
     value = os.getenv(name)
@@ -61,6 +124,7 @@ def _float_setting(value: object, default: float) -> float:
 class RunnerConfig:
     api_base_url: str
     runner_key: str
+    version: str = __version__
     runner_id: str = field(default_factory=lambda: socket.gethostname())
     api_prefix: str = "/api/runner"
     poll_interval_seconds: float = 2.0
@@ -79,9 +143,9 @@ class RunnerConfig:
     hermes_home: str = "/runner/.hermes"
     hermes_workspace_root: str = "/runner/workspaces"
     hermes_max_iterations: int = 20
-    hermes_default_toolsets: list[str] = field(default_factory=lambda: ["safe"])
+    hermes_default_toolsets: list[str] = field(default_factory=lambda: list(ALL_HERMES_TOOLSETS))
     hermes_allowed_toolsets: list[str] = field(
-        default_factory=lambda: ["safe", "web", "search", "vision", "image_gen", "mcp-sqlite-service"]
+        default_factory=lambda: [*ALL_HERMES_TOOLSETS, *EXTRA_ALLOWED_TOOLSETS]
     )
     hermes_memory_mode: str = "tenant"
     hermes_timeout_seconds: float = 300.0
@@ -105,6 +169,7 @@ class RunnerConfig:
         return cls(
             api_base_url=api_base_url.rstrip("/"),
             runner_key=runner_key,
+            version=os.getenv("RUNNER_VERSION") or os.getenv("APP_VERSION", cls.version),
             runner_id=os.getenv("RUNNER_ID") or os.getenv("RUNNER_NAME") or socket.gethostname(),
             api_prefix="/" + (os.getenv("RUNNER_API_PREFIX", "/api/runner").strip("/")),
             poll_interval_seconds=_float_env("RUNNER_POLL_INTERVAL_SECONDS", 2.0),
@@ -126,10 +191,10 @@ class RunnerConfig:
             hermes_home=os.getenv("HERMES_HOME", "/runner/.hermes"),
             hermes_workspace_root=os.getenv("HERMES_WORKSPACE_ROOT", "/runner/workspaces"),
             hermes_max_iterations=_int_env("HERMES_MAX_ITERATIONS", 20),
-            hermes_default_toolsets=_list_env("HERMES_DEFAULT_TOOLSETS", ["safe"]),
+            hermes_default_toolsets=_list_env("HERMES_DEFAULT_TOOLSETS", list(ALL_HERMES_TOOLSETS)),
             hermes_allowed_toolsets=_list_env(
                 "HERMES_ALLOWED_TOOLSETS",
-                ["safe", "web", "search", "vision", "image_gen", "mcp-sqlite-service"],
+                [*ALL_HERMES_TOOLSETS, *EXTRA_ALLOWED_TOOLSETS],
             ),
             hermes_memory_mode=os.getenv("HERMES_MEMORY_MODE", "tenant").strip().lower(),
             hermes_timeout_seconds=_float_env("HERMES_TIMEOUT_SECONDS", 300.0),
@@ -148,6 +213,7 @@ class RunnerConfig:
         data = {
             "api_base_url": api_base_url.rstrip("/"),
             "runner_key": runner_key,
+            "version": __version__,
             "runner_id": runner_id,
             "api_prefix": "/" + api_prefix.strip("/"),
             "poll_interval_seconds": 0.01,
@@ -166,15 +232,8 @@ class RunnerConfig:
             "hermes_home": "/tmp/sqlite-service-runner-hermes",
             "hermes_workspace_root": "/tmp/sqlite-service-runner-workspaces",
             "hermes_max_iterations": 20,
-            "hermes_default_toolsets": ["safe"],
-            "hermes_allowed_toolsets": [
-                "safe",
-                "web",
-                "search",
-                "vision",
-                "image_gen",
-                "mcp-sqlite-service",
-            ],
+            "hermes_default_toolsets": list(ALL_HERMES_TOOLSETS),
+            "hermes_allowed_toolsets": [*ALL_HERMES_TOOLSETS, *EXTRA_ALLOWED_TOOLSETS],
             "hermes_memory_mode": "off",
             "hermes_timeout_seconds": 300.0,
         }

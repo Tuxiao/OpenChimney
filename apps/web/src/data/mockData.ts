@@ -1,4 +1,5 @@
 import type { AuditEvent, HealthSnapshot, HermesConfig, Member, Order, RunnerJob, Task } from "../types/domain";
+import { APP_VERSION } from "../version";
 
 export const tasks: Task[] = [
   {
@@ -73,6 +74,7 @@ export const auditEvents: AuditEvent[] = [
 ];
 
 export const health: HealthSnapshot = {
+  version: APP_VERSION,
   api: "healthy",
   database: "healthy",
   runner: "degraded",
@@ -91,8 +93,29 @@ export const hermesConfig: HermesConfig = {
   task_root: "/runner/workspaces",
   hermes_home: "/runner/.hermes",
   max_iterations: 20,
-  default_toolsets: ["safe"],
-  allowed_toolsets: ["safe", "web", "search", "vision", "image_gen", "mcp-sqlite-service"],
+  default_toolsets: [
+    "browser", "clarify", "code_execution", "computer_use", "context_engine", "cronjob", "debugging",
+    "delegation", "discord", "discord_admin", "feishu_doc", "feishu_drive", "file", "hermes-acp",
+    "hermes-api-server", "hermes-bluebubbles", "hermes-cli", "hermes-cron", "hermes-dingtalk",
+    "hermes-discord", "hermes-email", "hermes-feishu", "hermes-gateway", "hermes-homeassistant",
+    "hermes-matrix", "hermes-mattermost", "hermes-qqbot", "hermes-signal", "hermes-slack",
+    "hermes-sms", "hermes-telegram", "hermes-webhook", "hermes-wecom", "hermes-wecom-callback",
+    "hermes-weixin", "hermes-whatsapp", "hermes-yuanbao", "homeassistant", "image_gen", "kanban",
+    "memory", "messaging", "moa", "safe", "search", "session_search", "skills", "spotify",
+    "terminal", "todo", "tts", "video", "video_gen", "vision", "web", "x_search", "yuanbao"
+  ],
+  allowed_toolsets: [
+    "browser", "clarify", "code_execution", "computer_use", "context_engine", "cronjob", "debugging",
+    "delegation", "discord", "discord_admin", "feishu_doc", "feishu_drive", "file", "hermes-acp",
+    "hermes-api-server", "hermes-bluebubbles", "hermes-cli", "hermes-cron", "hermes-dingtalk",
+    "hermes-discord", "hermes-email", "hermes-feishu", "hermes-gateway", "hermes-homeassistant",
+    "hermes-matrix", "hermes-mattermost", "hermes-qqbot", "hermes-signal", "hermes-slack",
+    "hermes-sms", "hermes-telegram", "hermes-webhook", "hermes-wecom", "hermes-wecom-callback",
+    "hermes-weixin", "hermes-whatsapp", "hermes-yuanbao", "homeassistant", "image_gen", "kanban",
+    "memory", "messaging", "moa", "safe", "search", "session_search", "skills", "spotify",
+    "terminal", "todo", "tts", "video", "video_gen", "vision", "web", "x_search", "yuanbao",
+    "mcp-sqlite-service"
+  ],
   memory_mode: "tenant",
   timeout_seconds: 300,
   updated_at: null

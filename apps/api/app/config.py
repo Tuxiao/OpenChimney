@@ -3,9 +3,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from .version import PROJECT_VERSION
+
 
 @dataclass(frozen=True)
 class AppConfig:
+    app_version: str = PROJECT_VERSION
     database_url: str = "sqlite:///./data/api.sqlite3"
     artifact_storage_dir: str = "./data/artifacts"
     runner_key: str = "dev-runner-key"
@@ -21,6 +24,7 @@ class AppConfig:
     @classmethod
     def from_env(cls) -> "AppConfig":
         return cls(
+            app_version=os.getenv("APP_VERSION", cls.app_version),
             database_url=os.getenv("DATABASE_URL", cls.database_url),
             artifact_storage_dir=os.getenv("ARTIFACT_STORAGE_DIR", cls.artifact_storage_dir),
             runner_key=os.getenv("RUNNER_KEY", os.getenv("RUNNER_API_KEY", cls.runner_key)),

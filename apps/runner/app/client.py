@@ -48,6 +48,7 @@ class RunnerApiClient:
             "/heartbeat",
             json={
                 "runner_id": self.config.runner_id,
+                "version": self.config.version,
                 "status": status,
                 "capabilities": self.config.capabilities,
             },
@@ -89,6 +90,24 @@ class RunnerApiClient:
         await self._post(
             f"/jobs/{job_id}/heartbeat",
             json={"runner_id": self.config.runner_id},
+        )
+
+    async def report_job_event(
+        self,
+        job_id: str,
+        event_type: str,
+        *,
+        message: str | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        await self._post(
+            f"/jobs/{job_id}/events",
+            json={
+                "runner_id": self.config.runner_id,
+                "event_type": event_type,
+                "message": message,
+                "data_json": data or {},
+            },
         )
 
     async def complete_job(self, job_id: str, result: JobResult) -> None:

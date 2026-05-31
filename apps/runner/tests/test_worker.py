@@ -70,6 +70,8 @@ async def test_worker_claims_chat_job_and_completes_with_assistant_message() -> 
             )
         if request.url.path == "/api/runner/jobs/job-1/heartbeat":
             return httpx.Response(200, json={"ok": True})
+        if request.url.path == "/api/runner/jobs/job-1/events":
+            return httpx.Response(201, json={"ok": True})
         if request.url.path == "/api/runner/jobs/job-1/complete":
             return httpx.Response(200, json={"ok": True})
         raise AssertionError(f"Unexpected path {request.url.path}")
@@ -85,6 +87,9 @@ async def test_worker_claims_chat_job_and_completes_with_assistant_message() -> 
         "/api/runner/heartbeat",
         "/api/runner/jobs/claim",
         "/api/runner/jobs/job-1/heartbeat",
+        "/api/runner/jobs/job-1/events",
+        "/api/runner/jobs/job-1/events",
+        "/api/runner/jobs/job-1/events",
         "/api/runner/jobs/job-1/complete",
     ]
 
@@ -105,6 +110,8 @@ async def test_worker_reports_provider_error_to_fail_endpoint() -> None:
         events.append((request.url.path, body))
         if request.url.path == "/api/runner/jobs/bad-job/heartbeat":
             return httpx.Response(200, json={"ok": True})
+        if request.url.path == "/api/runner/jobs/bad-job/events":
+            return httpx.Response(201, json={"ok": True})
         if request.url.path == "/api/runner/jobs/bad-job/fail":
             return httpx.Response(200, json={"ok": True})
         raise AssertionError(f"Unexpected path {request.url.path}")
@@ -117,6 +124,8 @@ async def test_worker_reports_provider_error_to_fail_endpoint() -> None:
 
     assert [path for path, _body in events] == [
         "/api/runner/jobs/bad-job/heartbeat",
+        "/api/runner/jobs/bad-job/events",
+        "/api/runner/jobs/bad-job/events",
         "/api/runner/jobs/bad-job/fail",
     ]
     error = events[-1][1]["error"]
@@ -129,7 +138,7 @@ async def test_worker_reports_unexpected_errors_as_retryable_failures() -> None:
     events: list[tuple[str, dict[str, object]]] = []
 
     class BrokenProviders:
-        async def execute(self, _job: Job) -> object:
+        async def execute(self, _job: Job, **_kwargs: object) -> object:
             raise RuntimeError("temporary outage")
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -137,6 +146,8 @@ async def test_worker_reports_unexpected_errors_as_retryable_failures() -> None:
         events.append((request.url.path, body))
         if request.url.path == "/api/runner/jobs/job-2/heartbeat":
             return httpx.Response(200, json={"ok": True})
+        if request.url.path == "/api/runner/jobs/job-2/events":
+            return httpx.Response(201, json={"ok": True})
         if request.url.path == "/api/runner/jobs/job-2/fail":
             return httpx.Response(200, json={"ok": True})
         raise AssertionError(f"Unexpected path {request.url.path}")
@@ -203,6 +214,8 @@ async def test_worker_runs_ai_agent_job_through_hermes_runtime(tmp_path) -> None
             )
         if request.url.path == "/api/runner/jobs/agent-1/heartbeat":
             return httpx.Response(200, json={"ok": True})
+        if request.url.path == "/api/runner/jobs/agent-1/events":
+            return httpx.Response(201, json={"ok": True})
         if request.url.path == "/api/runner/jobs/agent-1/complete":
             return httpx.Response(200, json={"ok": True})
         raise AssertionError(f"Unexpected path {request.url.path}")
@@ -252,6 +265,8 @@ async def test_worker_runs_ai_agent_job_through_hermes_runtime(tmp_path) -> None
     workspace = tmp_path / "workspaces" / "task-42"
     assert (workspace / ".hermes.md").exists()
     assert (workspace / "AGENTS.md").exists()
+    assert (workspace / "soul.md").exists()
+    assert "OpenChimney 的 AI 任务助手" in (workspace / "soul.md").read_text()
     assert (workspace / "artifacts").is_dir()
     assert (workspace / "logs").is_dir()
     assert (workspace / "tmp").is_dir()
@@ -261,10 +276,11 @@ async def test_worker_runs_ai_agent_job_through_hermes_runtime(tmp_path) -> None
     assert manifest["last_job_id"] == "agent-1"
     assert manifest["context"]["task_id"] == 42
     assert (tmp_path / "hermes" / "tenants" / "tenant-a").exists()
+    assert (tmp_path / "hermes" / "tenants" / "tenant-a" / "SOUL.md").exists()
 
 
 @pytest.mark.asyncio
-async def test_worker_rejects_forbidden_hermes_toolset(tmp_path) -> None:
+async def test_worker_rejects_unknown_hermes_toolset(tmp_path) -> None:
     events: list[tuple[str, dict[str, object]]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -272,6 +288,8 @@ async def test_worker_rejects_forbidden_hermes_toolset(tmp_path) -> None:
         events.append((request.url.path, body))
         if request.url.path == "/api/runner/jobs/agent-bad/heartbeat":
             return httpx.Response(200, json={"ok": True})
+        if request.url.path == "/api/runner/jobs/agent-bad/events":
+            return httpx.Response(201, json={"ok": True})
         if request.url.path == "/api/runner/jobs/agent-bad/fail":
             return httpx.Response(200, json={"ok": True})
         raise AssertionError(f"Unexpected path {request.url.path}")
@@ -287,7 +305,7 @@ async def test_worker_rejects_forbidden_hermes_toolset(tmp_path) -> None:
         payload={
             "instruction": "Run a command",
             "task_kind": "research.deep",
-            "toolsets": ["terminal"],
+            "toolsets": ["not-a-real-toolset"],
         },
     )
 
@@ -298,7 +316,7 @@ async def test_worker_rejects_forbidden_hermes_toolset(tmp_path) -> None:
     error = events[-1][1]["error"]
     assert error["code"] == "invalid_agent_toolset"
     assert error["retryable"] is False
-    assert error["details"]["illegal_toolsets"] == ["terminal"]
+    assert error["details"]["illegal_toolsets"] == ["not-a-real-toolset"]
 
 
 @pytest.mark.asyncio
@@ -310,6 +328,8 @@ async def test_worker_rejects_ai_agent_without_instruction(tmp_path) -> None:
         events.append((request.url.path, body))
         if request.url.path == "/api/runner/jobs/agent-missing/heartbeat":
             return httpx.Response(200, json={"ok": True})
+        if request.url.path == "/api/runner/jobs/agent-missing/events":
+            return httpx.Response(201, json={"ok": True})
         if request.url.path == "/api/runner/jobs/agent-missing/fail":
             return httpx.Response(200, json={"ok": True})
         raise AssertionError(f"Unexpected path {request.url.path}")

@@ -24,7 +24,7 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
                 seed_data(db, app_config)
         yield
 
-    app = FastAPI(title="OpenChimney API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="OpenChimney API", version=app_config.app_version, lifespan=lifespan)
     app.state.config = app_config
     app.state.engine = create_db_engine(app_config.database_url)
     app.state.SessionLocal = create_session_factory(app.state.engine)
@@ -41,7 +41,11 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
     def health() -> dict[str, str]:
         with app.state.engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1")
-        return {"status": "ok", "database": "ok"}
+        return {"status": "ok", "database": "ok", "version": app_config.app_version}
+
+    @app.get("/api/version")
+    def version() -> dict[str, str]:
+        return {"version": app_config.app_version}
 
     app.include_router(auth.router)
     app.include_router(members.router)

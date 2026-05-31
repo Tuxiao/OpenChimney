@@ -5,6 +5,7 @@ import logging
 import random
 import time
 from collections.abc import Callable
+from typing import Any
 
 from .client import RunnerApiClient
 from .config import RunnerConfig
@@ -85,15 +86,51 @@ class RunnerWorker:
             },
         )
         heartbeat_task = asyncio.create_task(self._renew_job_heartbeat_until_done(job.id))
+        event_tasks: set[asyncio.Task[None]] = set()
+        loop = asyncio.get_running_loop()
+
+        def submit_event(event_type: str, message: str | None = None, data: dict[str, Any] | None = None) -> None:
+            def create_task() -> None:
+                task = asyncio.create_task(
+                    self.client.report_job_event(
+                        job.id,
+                        event_type,
+                        message=message,
+                        data={"runner_id": self.config.runner_id, **(data or {})},
+                    )
+                )
+                event_tasks.add(task)
+                task.add_done_callback(event_tasks.discard)
+
+            loop.call_soon_threadsafe(create_task)
+
+        async def flush_event_tasks() -> None:
+            await asyncio.sleep(0)
+            if event_tasks:
+                await asyncio.gather(*list(event_tasks), return_exceptions=True)
+
         try:
             await self.client.renew_job_heartbeat(job.id)
-            result = await self.providers.execute(job)
+            await self.client.report_job_event(
+                job.id,
+                "runner.started",
+                message="Runner started job",
+                data={"runner_id": self.config.runner_id, "attempt": job.attempt, "job_type": job.type},
+            )
+            result = await self.providers.execute(job, event_sink=submit_event)
+            await flush_event_tasks()
             await self.client.complete_job(job.id, result)
             logger.info(
                 "job completed",
                 extra={"_json_runner_id": self.config.runner_id, "_json_job_id": job.id},
             )
         except ProviderError as exc:
+            submit_event(
+                "runner.failed",
+                str(exc),
+                {"code": exc.code, "retryable": exc.retryable},
+            )
+            await flush_event_tasks()
             await self.client.fail_job(job.id, exc.to_failure())
             logger.warning(
                 "job failed in provider",
@@ -111,6 +148,12 @@ class RunnerWorker:
                 retryable=True,
                 details={"exception_type": exc.__class__.__name__},
             )
+            submit_event(
+                "runner.failed",
+                failure.message,
+                {"code": failure.code, "retryable": failure.retryable},
+            )
+            await flush_event_tasks()
             try:
                 await self.client.fail_job(job.id, failure)
             except Exception:

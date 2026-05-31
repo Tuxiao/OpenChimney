@@ -16,10 +16,10 @@ Default API prefix is `/api/runner`; override with `RUNNER_API_PREFIX` if the AP
 
 On startup, `sqlite-service-runner run` and `sqlite-service-runner once` fetch the Hermes config from the API before constructing the worker. The fetched config controls `model`, `provider`, `base_url`, `api_key`, `task_root`, `hermes_home`, toolsets, memory mode, timeout, and max iterations. Environment variables are fallback values when the database config omits a field.
 
-Every Hermes job gets an initialized workspace below `task_root`. The runner uses `workspace_id` when present, otherwise `task-<task_id>`, then `conversation-<conversation_id>`, then `job-<job_id>`. Initialization creates `.hermes.md`, `AGENTS.md`, `workspace.json`, `artifacts/`, `logs/`, and `tmp/`.
+Every Hermes job gets an initialized workspace below `task_root`. The runner uses `workspace_id` when present, otherwise `task-<task_id>`, then `conversation-<conversation_id>`, then `job-<job_id>`. Initialization creates `.hermes.md`, `AGENTS.md`, `soul.md`, `workspace.json`, `artifacts/`, `logs/`, and `tmp/`. The same OpenChimney identity is also written to `HERMES_HOME/SOUL.md` so Hermes can load it as the agent identity.
 
 Resume is enabled by default. The API-created task jobs include `session_id=conversation-<conversation_id>` and `workspace_id=task-<task_id>`, so follow-up messages in the same task conversation reuse the same Hermes session and task directory. Payloads can set `"resume": false` to force a job-scoped session.
 
-Default runner capabilities are `ai.agent.v1,ai.chat`. `ai.agent.v1` jobs execute through Hermes; legacy `ai.chat` jobs are mapped to a restricted Hermes chat task. Keep `terminal`, `file`, and `browser` toolsets disabled unless the job type has a separate sandbox and approval policy.
+Default runner capabilities are `ai.agent.v1,ai.chat`. `ai.agent.v1` jobs execute through Hermes. OpenChimney enables all Hermes built-in toolsets by default, including browser, web, file, terminal, skills, memory, todo, code execution, and delegation; Hermes still filters tools whose runtime requirements or credentials are unavailable. The runner image includes Chromium, agent-browser, and `ddgs`, so browser tools and the default web search/extract backend work without extra browser installation or paid search API keys.
 
 See `apps/runner/README.md` for the full environment variable list, REST payload contract, and a systemd unit example.

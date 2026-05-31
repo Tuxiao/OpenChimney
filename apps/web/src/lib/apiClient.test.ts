@@ -45,6 +45,32 @@ describe("ApiClient", () => {
     });
   });
 
+  it("sets phone account password with bearer auth", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ has_password: true, requires_password_setup: false }), { status: 200 })) as unknown as typeof fetch;
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetcher, token: "phone-token" });
+
+    await client.setPassword("password123");
+
+    expect(fetcher).toHaveBeenCalledWith("http://localhost:8000/api/auth/set-password", {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: "Bearer phone-token" },
+      body: JSON.stringify({ password: "password123" })
+    });
+  });
+
+  it("surfaces FastAPI error detail messages", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ detail: "Password is not set for this phone. Sign in with SMS first." }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        })
+    ) as unknown as typeof fetch;
+    const client = new ApiClient({ baseUrl: "http://localhost:8000", fetcher });
+
+    await expect(client.loginWithPhonePassword("+15551234567", "password123")).rejects.toThrow("Password is not set for this phone. Sign in with SMS first.");
+  });
+
   it("saves Hermes settings through the admin endpoint", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ enabled: true, model: "openai/gpt-4.1" }), { status: 200 })) as unknown as typeof fetch;
     const client = new ApiClient({ baseUrl: "http://localhost:8000", fetcher, token: "admin-token" });

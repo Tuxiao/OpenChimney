@@ -103,6 +103,45 @@ def test_runner_wire_format_claim_and_complete_writes_assistant_message(client):
     assert messages[-1]["content"] == "Stub assistant response."
 
 
+def test_runner_job_events_stream_to_task_sse(client):
+    token = register_user(client, "stream@example.com")
+    task = client.post(
+        "/api/tasks",
+        headers=auth_headers(token),
+        json={"title": "Stream task", "description": "Watch runner events"},
+    )
+    assert task.status_code == 201, task.text
+    task_id = task.json()["id"]
+    message = client.post(
+        f"/api/tasks/{task_id}/messages",
+        headers=auth_headers(token),
+        json={"content": "Stream this task."},
+    )
+    assert message.status_code == 201, message.text
+    job_id = message.json()["runner_job_id"]
+
+    event = client.post(
+        f"/api/runner/jobs/{job_id}/events",
+        headers=runner_headers(),
+        json={
+            "event_type": "hermes.thinking",
+            "message": "Thinking",
+            "data_json": {"phase": "model"},
+        },
+    )
+    assert event.status_code == 201, event.text
+
+    response = client.get(f"/api/tasks/{task_id}/events?once=true", headers=auth_headers(token))
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/event-stream")
+    lines = response.text.splitlines()
+
+    assert any(line == "event: task" for line in lines)
+    assert any(line == "event: runner_event" for line in lines)
+    assert "Stream this task." in response.text
+    assert "hermes.thinking" in response.text
+
+
 def test_runner_fail_retries_until_final_failure(client):
     token = register_user(client, "retry@example.com")
     job_id = create_task_with_runner_job(client, token)

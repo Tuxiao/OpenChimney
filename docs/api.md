@@ -16,6 +16,7 @@ Default runtime settings:
 - `RUNNER_KEY=dev-runner-key` or `RUNNER_API_KEY=dev-runner-key`
 - `DEFAULT_ADMIN_EMAIL=admin@example.com`
 - `DEFAULT_ADMIN_PASSWORD=admin1234`
+- `APP_VERSION=0.1.0`
 
 The app enables SQLite `foreign_keys`, `busy_timeout=5000`, and WAL mode on
 each connection. On startup it creates the schema and seeds `user`/`admin`
@@ -23,6 +24,8 @@ roles, the default admin account, and baseline app settings.
 
 ## Main Endpoints
 
+- `GET /api/health` returns API, database, and version status
+- `GET /api/version` returns the running OpenChimney version
 - `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`
 - `POST /api/auth/phone/request-code` returns a development SMS code for copy/paste testing
 - `POST /api/auth/phone/verify-code` verifies the code and auto-registers first-time phone users

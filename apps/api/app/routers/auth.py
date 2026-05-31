@@ -201,12 +201,14 @@ def login_with_phone_password(
 ) -> AuthOut:
     phone = normalize_phone(payload.phone)
     user = db.query(User).filter(User.phone == phone).one_or_none()
-    if (
-        user is None
-        or not user.is_active
-        or not user.password_hash
-        or not verify_password(payload.password, user.password_hash)
-    ):
+    if user is None or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid phone or password")
+    if not user.password_hash:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Password is not set for this phone. Sign in with SMS first.",
+        )
+    if not verify_password(payload.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid phone or password")
 
     token, session = create_session(db, user, config, request)

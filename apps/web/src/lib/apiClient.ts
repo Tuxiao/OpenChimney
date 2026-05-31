@@ -4,6 +4,7 @@ import type {
   AuditEvent,
   AuthResponse,
   Conversation,
+  ConversationMessage,
   HealthSnapshot,
   HermesConfig,
   HermesConfigInput,
@@ -12,6 +13,8 @@ import type {
   Order,
   PhoneCodeResponse,
   RunnerJob,
+  RunnerJobEvent,
+  TaskStreamEvent,
   Task,
   TaskMessageResponse,
   TaskPriority
@@ -29,9 +32,38 @@ const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve,
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new Error(`API request failed with ${response.status}`);
+    throw new Error(await responseErrorMessage(response));
   }
   return response.json() as Promise<T>;
+}
+
+async function responseErrorMessage(response: Response): Promise<string> {
+  const fallback = `API request failed with ${response.status}`;
+  try {
+    const body = await response.json();
+    if (typeof body?.detail === "string") {
+      return body.detail;
+    }
+    if (Array.isArray(body?.detail)) {
+      const details = body.detail
+        .map((item: unknown) => {
+          if (typeof item === "string") {
+            return item;
+          }
+          if (item && typeof item === "object" && "msg" in item) {
+            return String((item as { msg: unknown }).msg);
+          }
+          return "";
+        })
+        .filter(Boolean);
+      if (details.length > 0) {
+        return details.join("; ");
+      }
+    }
+  } catch {
+    return fallback;
+  }
+  return fallback;
 }
 
 export class ApiClient {
@@ -78,6 +110,48 @@ export class ApiClient {
 
   async conversations(): Promise<Conversation[]> {
     return this.get("/api/conversations", []);
+  }
+
+  async streamTaskEvents(
+    taskId: number,
+    onEvent: (event: TaskStreamEvent) => void,
+    signal?: AbortSignal
+  ): Promise<void> {
+    if (this.useMocks) {
+      return;
+    }
+    const response = await this.fetcher(`${this.baseUrl}/api/tasks/${taskId}/events`, {
+      headers: {
+        Accept: "text/event-stream",
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
+      },
+      signal
+    });
+    if (!response.ok) {
+      throw new Error(`Task event stream failed with ${response.status}`);
+    }
+    if (!response.body) {
+      throw new Error("Task event stream response was empty");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split(/\n\n/);
+      buffer = frames.pop() ?? "";
+      for (const frame of frames) {
+        const parsed = parseSseFrame(frame);
+        if (parsed) {
+          onEvent(parsed);
+        }
+      }
+    }
   }
 
   async downloadAttachment(attachment: MessageAttachment): Promise<void> {
@@ -230,6 +304,39 @@ export class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+
+function parseSseFrame(frame: string): TaskStreamEvent | null {
+  let eventName = "message";
+  const dataLines: string[] = [];
+  for (const line of frame.split(/\r?\n/)) {
+    if (line.startsWith("event:")) {
+      eventName = line.slice("event:".length).trim();
+    }
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trimStart());
+    }
+  }
+  if (!dataLines.length) {
+    return null;
+  }
+  const data = JSON.parse(dataLines.join("\n")) as Record<string, unknown>;
+  if (eventName === "task" && data.task) {
+    return { type: "task", task: data.task as ApiTask };
+  }
+  if (eventName === "runner_event" && data.event) {
+    return { type: "runner_event", event: data.event as RunnerJobEvent };
+  }
+  if (eventName === "message" && data.message) {
+    return { type: "message", message: data.message as ConversationMessage };
+  }
+  if (eventName === "ping") {
+    return { type: "ping", at: String(data.at ?? "") };
+  }
+  if (eventName === "error") {
+    return { type: "error", message: String(data.message ?? "Task stream error") };
+  }
+  return null;
+}
 
 function normalizePhone(phone: string): string {
   const cleaned = phone.trim().replace(/[^\d+]/g, "");

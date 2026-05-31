@@ -62,6 +62,22 @@ export interface TaskMessageResponse {
   runner_job_id: number;
 }
 
+export interface RunnerJobEvent {
+  id: number;
+  runner_job_id: number;
+  event_type: string;
+  message?: string | null;
+  data_json: Record<string, unknown>;
+  created_at: string;
+}
+
+export type TaskStreamEvent =
+  | { type: "task"; task: ApiTask }
+  | { type: "runner_event"; event: RunnerJobEvent }
+  | { type: "message"; message: ConversationMessage }
+  | { type: "ping"; at: string }
+  | { type: "error"; message: string };
+
 export interface RunnerJob {
   id: string;
   taskId: string;
@@ -96,6 +112,7 @@ export interface AuditEvent {
 }
 
 export interface HealthSnapshot {
+  version?: string;
   api: ServiceState;
   database: ServiceState;
   runner: ServiceState;

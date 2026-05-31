@@ -41,6 +41,7 @@ Edit `.env` before starting:
 - `RUNNER_API_KEY`: long random key shared by API and runner.
 - `DEFAULT_ADMIN_PASSWORD`: strong initial admin password.
 - `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `HERMES_API_KEY` for Hermes Agent model access.
+- `APP_VERSION`: Docker image tag and runtime version label. Keep it aligned with `VERSION`.
 - `WEB_PORT`: usually `80`, or `8080` when another reverse proxy owns port 80.
 
 Start the stack:

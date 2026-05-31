@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -32,8 +32,11 @@ import {
   UserRoundCog,
   UsersRound
 } from "lucide-react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { auditEvents, chatMessages, health, members, orders, runnerJobs, tasks } from "./data/mockData";
 import { apiClient, ApiClient } from "./lib/apiClient";
+import { APP_VERSION } from "./version";
 import type {
   ApiTask,
   AuditEvent,
@@ -44,6 +47,7 @@ import type {
   Member,
   MessageAttachment,
   Order,
+  RunnerJobEvent,
   RunnerJob,
   ServiceState,
   Task,
@@ -56,9 +60,40 @@ type FooterLink = { label: string; route: Route } | { label: string; href: strin
 type UserPage = "tasks" | "chat" | "user-center" | "account";
 type AdminPage = "dashboard" | "members" | "orders" | "audit" | "settings";
 type TaskView = "home" | "create" | "detail";
+type ToolCallStep = { name: string; parameters: Array<{ name: string; value: string }> };
+type StreamState = "connecting" | "live" | "idle" | "error";
 
 const taskStatuses: Array<"all" | TaskStatus> = ["all", "open", "queued", "running", "completed", "blocked", "failed"];
 const publicRoutes = new Set<Route>(["landing", "pricing", "login", "set-password", "admin-login"]);
+const markdownComponents: Components = {
+  p: ({ children }) => <p className="mb-3 whitespace-pre-wrap leading-6 last:mb-0">{children}</p>,
+  a: ({ href, children }) => (
+    <a className="font-medium text-accent underline underline-offset-2" href={href} rel="noreferrer" target="_blank">
+      {children}
+    </a>
+  ),
+  h1: ({ children }) => <h1 className="mb-3 mt-4 text-xl font-semibold leading-tight first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="mb-2 mt-4 text-lg font-semibold leading-tight first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="mb-2 mt-3 text-base font-semibold leading-tight first:mt-0">{children}</h3>,
+  ul: ({ children }) => <ul className="mb-3 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-3 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
+  li: ({ children }) => <li className="leading-6">{children}</li>,
+  blockquote: ({ children }) => <blockquote className="my-3 border-l-2 border-accent bg-paper px-3 py-2 text-muted">{children}</blockquote>,
+  strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  code: ({ className, children }) => {
+    const isBlock = Boolean(className);
+    return (
+      <code className={isBlock ? `${className} block overflow-x-auto whitespace-pre p-3 text-xs leading-5` : "border border-line bg-paper px-1 py-0.5 text-[0.92em]"}>
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children }) => <pre className="my-3 overflow-x-auto border border-line bg-paper">{children}</pre>,
+  table: ({ children }) => <div className="my-3 overflow-x-auto"><table className="w-full border-collapse text-left text-sm">{children}</table></div>,
+  th: ({ children }) => <th className="border border-line bg-paper px-2 py-1 font-semibold">{children}</th>,
+  td: ({ children }) => <td className="border border-line px-2 py-1 align-top">{children}</td>
+};
 
 function routeFromPath(pathname: string): Route {
   if (pathname === "/admin/login" || pathname.startsWith("/admin/login/")) {
@@ -132,8 +167,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (route === "user" && !auth) {
-      navigate("login", { replace: true });
+    if (route === "user" && (!auth || auth.user.requires_password_setup)) {
+      navigate(auth ? "set-password" : "login", { replace: true });
       return;
     }
     if (route === "admin" && (!auth || !isSuperAdmin(auth.user))) {
@@ -142,12 +177,16 @@ export function App() {
     }
     if (route === "set-password" && !auth) {
       navigate("login", { replace: true });
+      return;
+    }
+    if (route === "set-password" && auth && !auth.user.requires_password_setup) {
+      navigate("user", { replace: true });
     }
   }, [auth, navigate, route]);
 
   const handleAuth = (response: AuthResponse) => {
     setAuth({ token: response.token.access_token, user: response.user });
-    navigate(response.requires_password_setup ? "set-password" : "user");
+    navigate(response.requires_password_setup || response.user.requires_password_setup ? "set-password" : "user");
   };
 
   const handleAdminAuth = (response: AuthResponse) => {
@@ -171,12 +210,12 @@ export function App() {
     <div className="min-h-screen bg-mist text-ink">
       {publicRoute ? (
         <>
-          <ProductHeader route={route} onNavigate={navigate} authed={Boolean(auth)} />
+          <ProductHeader route={route} onNavigate={navigate} authed={Boolean(auth && !auth.user.requires_password_setup)} />
           {route === "landing" && <LandingPage onGetStarted={() => navigate("login")} onPricing={() => navigate("pricing")} />}
           {route === "pricing" && <PricingPage onGetStarted={() => navigate("login")} />}
           {route === "login" && <LoginPage onAuthenticated={handleAuth} />}
           {route === "admin-login" && <AdminLoginPage onAuthenticated={handleAdminAuth} />}
-          {route === "set-password" && auth && <SetPasswordPage api={authedApi} token={auth.token} onComplete={handlePasswordSet} />}
+          {route === "set-password" && auth && <SetPasswordPage api={authedApi} onComplete={handlePasswordSet} />}
           <ProductFooter onNavigate={navigate} />
         </>
       ) : route === "user" && auth ? (
@@ -532,15 +571,40 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthRespon
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [devCode, setDevCode] = useState("");
+  const [smsPhone, setSmsPhone] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const normalizedPhone = normalizePhoneForLogin(phone);
+  const codeMatchesPhone = !smsPhone || smsPhone === normalizedPhone;
+  const canRequestCode = normalizedPhone.length >= 5 && !busy;
+  const canSubmitSms = Boolean(code.trim()) && Boolean(smsPhone) && codeMatchesPhone && !busy;
+  const canSubmitPassword = normalizedPhone.length >= 5 && password.length >= 8 && !busy;
+
+  const switchMode = (nextMode: "sms" | "phone-password") => {
+    setMode(nextMode);
+    setError("");
+  };
+
+  const updatePhone = (value: string) => {
+    setPhone(value);
+    if (smsPhone && normalizePhoneForLogin(value) !== smsPhone) {
+      setCode("");
+      setDevCode("");
+      setSmsPhone("");
+    }
+  };
 
   const submitCodeRequest = async () => {
+    if (!normalizedPhone) {
+      setError("Enter a phone number first.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       const response = await apiClient.requestPhoneCode(phone);
       setPhone(response.phone);
+      setSmsPhone(response.phone);
       setDevCode(response.dev_code);
       setCode("");
     } catch (err) {
@@ -550,11 +614,16 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthRespon
     }
   };
 
-  const submitSmsLogin = async () => {
+  const submitSmsLogin = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!canSubmitSms) {
+      setError(codeMatchesPhone ? "Enter the SMS code first." : "Request a new SMS code for this phone number.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      onAuthenticated(await apiClient.verifyPhoneCode(phone, code));
+      onAuthenticated(await apiClient.verifyPhoneCode(phone, code.trim()));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to verify code");
     } finally {
@@ -562,7 +631,12 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthRespon
     }
   };
 
-  const submitPasswordLogin = async () => {
+  const submitPasswordLogin = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (!canSubmitPassword) {
+      setError(password.length < 8 ? "Password must contain at least 8 characters." : "Enter a phone number first.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -590,43 +664,43 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthRespon
         </div>
         <section className="border border-line bg-paper">
           <div className="grid grid-cols-2 border-b border-line">
-            <button className={`h-12 text-sm font-semibold ${mode === "sms" ? "border-b-2 border-accent text-accent" : "text-muted"}`} onClick={() => setMode("sms")}>
-              Phone + SMS
+            <button type="button" className={`h-12 text-sm font-semibold ${mode === "sms" ? "border-b-2 border-accent text-accent" : "text-muted"}`} onClick={() => switchMode("sms")}>
+              SMS code
             </button>
-            <button className={`h-12 text-sm font-semibold ${mode === "phone-password" ? "border-b-2 border-accent text-accent" : "text-muted"}`} onClick={() => setMode("phone-password")}>
-              Phone password
+            <button type="button" className={`h-12 text-sm font-semibold ${mode === "phone-password" ? "border-b-2 border-accent text-accent" : "text-muted"}`} onClick={() => switchMode("phone-password")}>
+              Password
             </button>
           </div>
-          <div className="space-y-4 p-5">
-            <label className="block">
+          <form className="space-y-4 p-5" onSubmit={mode === "phone-password" ? submitPasswordLogin : submitSmsLogin}>
+            <label className="block" htmlFor="login-phone">
               <span className="mb-2 block text-sm font-medium">Phone number</span>
               <div className="flex h-11 items-center border border-line bg-field px-3 focus-within:border-accent">
                 <Phone size={16} className="mr-2 text-muted" />
-                <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" value={phone} onChange={(event) => setPhone(event.target.value)} />
+                <input id="login-phone" autoComplete="tel" className="min-w-0 flex-1 bg-transparent text-sm outline-none" value={phone} onChange={(event) => updatePhone(event.target.value)} />
               </div>
             </label>
 
             {mode === "phone-password" ? (
               <>
-                <label className="block">
+                <label className="block" htmlFor="login-password">
                   <span className="mb-2 block text-sm font-medium">Password</span>
                   <div className="flex h-11 items-center border border-line bg-field px-3 focus-within:border-accent">
                     <LockKeyhole size={16} className="mr-2 text-muted" />
-                    <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+                    <input id="login-password" autoComplete="current-password" className="min-w-0 flex-1 bg-transparent text-sm outline-none" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
                   </div>
                 </label>
-                <button className="btn-primary w-full justify-center" disabled={busy} onClick={submitPasswordLogin}>
-                  Sign in
+                <button type="submit" className="btn-primary w-full justify-center" disabled={!canSubmitPassword}>
+                  Sign in with password
                 </button>
               </>
             ) : (
               <>
                 <div className="grid grid-cols-[1fr_auto] gap-2">
-                  <label className="block">
+                  <label className="block" htmlFor="login-sms-code">
                     <span className="mb-2 block text-sm font-medium">SMS code</span>
-                    <input className="h-11 w-full border border-line bg-field px-3 text-sm outline-none focus:border-accent" value={code} onChange={(event) => setCode(event.target.value)} placeholder="6-digit code" />
+                    <input id="login-sms-code" autoComplete="one-time-code" inputMode="numeric" className="h-11 w-full border border-line bg-field px-3 text-sm outline-none focus:border-accent" value={code} onChange={(event) => setCode(event.target.value)} placeholder="6-digit code" />
                   </label>
-                  <button className="mt-7 h-11 border border-line px-3 text-sm font-semibold hover:border-ink" disabled={busy} onClick={submitCodeRequest}>
+                  <button type="button" className="mt-7 h-11 border border-line px-3 text-sm font-semibold hover:border-ink disabled:cursor-not-allowed disabled:text-muted" disabled={!canRequestCode} onClick={submitCodeRequest}>
                     Send
                   </button>
                 </div>
@@ -638,17 +712,21 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthRespon
                     </button>
                   </div>
                 )}
-                <button className="btn-primary w-full justify-center" disabled={busy || !code} onClick={submitSmsLogin}>
-                  Continue
+                <button type="submit" className="btn-primary w-full justify-center" disabled={!canSubmitSms}>
+                  Continue with SMS code
                 </button>
               </>
             )}
             {error && <p className="border border-line bg-field p-3 text-sm text-ink">{error}</p>}
-          </div>
+          </form>
         </section>
       </section>
     </main>
   );
+}
+
+function normalizePhoneForLogin(phone: string): string {
+  return phone.trim().replace(/[^\d+]/g, "");
 }
 
 function AdminLoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthResponse) => void }) {
@@ -719,21 +797,30 @@ function AdminLoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthR
   );
 }
 
-function SetPasswordPage({ api, token, onComplete }: { api: ApiClient; token: string; onComplete: (user: AuthResponse["user"]) => void }) {
+function SetPasswordPage({ api, onComplete }: { api: ApiClient; onComplete: (user: AuthResponse["user"]) => void }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const isValidLength = password.length >= 8;
+  const passwordsMatch = password === confirm;
+  const showMismatch = confirm.length >= 8 && !passwordsMatch;
+  const canSubmit = isValidLength && confirm.length >= 8 && passwordsMatch && !busy;
 
-  const submit = async () => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setError("");
+    if (!isValidLength) {
+      setError("Password must contain at least 8 characters");
+      return;
+    }
     if (password !== confirm) {
       setError("Passwords do not match");
       return;
     }
     setBusy(true);
     try {
-      onComplete(await api.setPassword(password, token));
+      onComplete(await api.setPassword(password));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to set password");
     } finally {
@@ -749,15 +836,37 @@ function SetPasswordPage({ api, token, onComplete }: { api: ApiClient; token: st
             <LockKeyhole size={24} />
           </div>
           <h1 className="mt-5 text-center text-2xl font-semibold">Set your password</h1>
-          <p className="mt-2 text-center text-sm leading-6 text-muted">Create a password for future phone + password sign in.</p>
-          <div className="mt-6 space-y-4">
-            <input className="h-11 w-full border border-line bg-field px-3 text-sm outline-none focus:border-accent" type="password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} />
-            <input className="h-11 w-full border border-line bg-field px-3 text-sm outline-none focus:border-accent" type="password" placeholder="Confirm password" value={confirm} onChange={(event) => setConfirm(event.target.value)} />
-            <button className="btn-primary w-full justify-center" disabled={busy || password.length < 8 || confirm.length < 8} onClick={submit}>
-              Create account
+          <p className="mt-2 text-center text-sm leading-6 text-muted">Your phone account is ready. Add a password to enable future phone + password sign in.</p>
+          <form className="mt-6 space-y-4" onSubmit={submit}>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium">Password</span>
+              <input
+                autoComplete="new-password"
+                className="h-11 w-full border border-line bg-field px-3 text-sm outline-none focus:border-accent"
+                minLength={8}
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium">Confirm password</span>
+              <input
+                autoComplete="new-password"
+                className="h-11 w-full border border-line bg-field px-3 text-sm outline-none focus:border-accent"
+                minLength={8}
+                type="password"
+                value={confirm}
+                onChange={(event) => setConfirm(event.target.value)}
+              />
+            </label>
+            <p className="text-xs leading-5 text-muted">Use at least 8 characters. Both fields must match before continuing.</p>
+            {showMismatch && <p className="border border-line bg-field p-3 text-sm">Passwords do not match</p>}
+            <button className="btn-primary w-full justify-center" disabled={!canSubmit} type="submit">
+              {busy ? "Saving..." : "Set password and enter console"}
             </button>
             {error && <p className="border border-line bg-field p-3 text-sm">{error}</p>}
-          </div>
+          </form>
         </div>
       </section>
     </main>
@@ -832,8 +941,9 @@ function ProductFooter({ onNavigate }: { onNavigate: (route: Route) => void }) {
         </div>
 
         <div className="flex flex-col gap-3 border-t border-white/10 py-5 text-xs text-[#aeb8c5] sm:flex-row sm:items-center sm:justify-between">
-          <p>(c) 2026 OpenChimney. AI service engineering scaffold for local-first products.</p>
+          <p>(c) 2026 OpenChimney v{APP_VERSION}. AI service engineering scaffold for local-first products.</p>
           <div className="flex flex-wrap gap-4">
+            <span>Release v{APP_VERSION}</span>
             <a className="hover:text-paper" href="#docs">Privacy</a>
             <a className="hover:text-paper" href="#docs">Terms</a>
             <a className="hover:text-paper" href="#docs">Security</a>
@@ -1194,6 +1304,79 @@ function TaskDetail({
   const [busy, setBusy] = useState(false);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [status, setStatus] = useState("");
+  const [streamEvents, setStreamEvents] = useState<RunnerJobEvent[]>([]);
+  const [streamMessages, setStreamMessages] = useState<Conversation["messages"]>([]);
+  const [liveAssistantText, setLiveAssistantText] = useState("");
+  const [streamState, setStreamState] = useState<StreamState>("idle");
+  const [streamError, setStreamError] = useState("");
+
+  useEffect(() => {
+    if (!task) {
+      setStreamEvents([]);
+      setStreamMessages([]);
+      setLiveAssistantText("");
+      setStreamState("idle");
+      setStreamError("");
+      return;
+    }
+
+    const controller = new AbortController();
+    setStreamEvents([]);
+    setStreamMessages([]);
+    setLiveAssistantText("");
+    setStreamState("connecting");
+    setStreamError("");
+
+    void api
+      .streamTaskEvents(
+        task.id,
+        (event) => {
+          if (event.type === "ping") {
+            setStreamState("live");
+            return;
+          }
+          if (event.type === "error") {
+            setStreamState("error");
+            setStreamError(event.message);
+            return;
+          }
+          setStreamState("live");
+          if (event.type === "runner_event") {
+            setStreamEvents((current) => appendUniqueEvent(current, event.event));
+            const delta = streamDeltaFromEvent(event.event);
+            if (delta) {
+              setLiveAssistantText((current) => `${current}${delta}`);
+            }
+            return;
+          }
+          if (event.type === "message") {
+            setStreamMessages((current) => appendUniqueMessage(current, event.message));
+            if (event.message.role === "assistant") {
+              setLiveAssistantText("");
+            }
+          }
+        },
+        controller.signal
+      )
+      .then(() => {
+        if (!controller.signal.aborted) {
+          setStreamState("idle");
+        }
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          setStreamState("error");
+          setStreamError(err instanceof Error ? err.message : "Task stream disconnected");
+        }
+      });
+
+    return () => controller.abort();
+  }, [api, task?.id]);
+
+  const displayedMessages = useMemo(
+    () => mergeMessages(conversation?.messages ?? [], streamMessages),
+    [conversation?.messages, streamMessages]
+  );
 
   if (!task) {
     return (
@@ -1239,7 +1422,7 @@ function TaskDetail({
     }
   };
 
-  const attachments = conversation?.messages.flatMap((message) => message.attachments) ?? [];
+  const attachments = displayedMessages.flatMap((message) => message.attachments);
 
   return (
     <section className="space-y-4">
@@ -1264,9 +1447,10 @@ function TaskDetail({
           <div className="space-y-5">
             <DetailBlock label="Detail" value={task.description || "No detail"} />
             <TaskChat
-              messages={conversation?.messages ?? []}
+              messages={displayedMessages}
               value={messageText}
               busy={busy}
+              liveAssistantText={liveAssistantText}
               onChange={setMessageText}
               onSend={sendMessage}
             />
@@ -1292,17 +1476,12 @@ function TaskDetail({
               </div>
               {status && <p className="mt-2 text-sm text-muted">{status}</p>}
             </div>
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase text-muted">Runner events</p>
-              <ol className="space-y-2">
-                {["Task stored in SQLite", task.status === "completed" ? "Runner completed" : "Runner queue active", attachments.length ? "Artifact available" : "Waiting for artifact"].map((event) => (
-                  <li key={event} className="flex gap-2 text-sm">
-                    <CheckCircle2 className="mt-0.5 text-accent" size={15} />
-                    <span>{event}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
+            <RunStreamPanel
+              events={streamEvents}
+              liveAssistantText={liveAssistantText}
+              state={streamState}
+              error={streamError}
+            />
             <div className="grid grid-cols-2 border border-line">
               <MetricCell label="Owner" value={owner} />
               <MetricCell label="Priority" value={task.priority} />
@@ -1320,12 +1499,14 @@ function TaskChat({
   messages,
   value,
   busy,
+  liveAssistantText,
   onChange,
   onSend
 }: {
   messages: Conversation["messages"];
   value: string;
   busy: boolean;
+  liveAssistantText: string;
   onChange: (value: string) => void;
   onSend: () => void;
 }) {
@@ -1343,10 +1524,19 @@ function TaskChat({
             <span className="mb-1 block text-[11px] font-semibold uppercase text-muted">
               {message.role}
             </span>
-            <span className="whitespace-pre-wrap leading-5">{message.content}</span>
+            <MessageContent content={message.content} role={message.role} />
           </div>
         ))}
-        {!messages.length && <p className="text-sm text-muted">No messages yet.</p>}
+        {liveAssistantText && (
+          <div className="border border-accent bg-field px-3 py-2 text-sm shadow-sm">
+            <span className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase text-accent">
+              <Activity size={13} />
+              assistant streaming
+            </span>
+            <MessageContent content={liveAssistantText} role="assistant" />
+          </div>
+        )}
+        {!messages.length && !liveAssistantText && <p className="text-sm text-muted">No messages yet.</p>}
       </div>
       <div className="mt-2 flex border border-line bg-field">
         <input
@@ -1367,6 +1557,319 @@ function TaskChat({
       </div>
     </div>
   );
+}
+
+function RunStreamPanel({
+  events,
+  liveAssistantText,
+  state,
+  error
+}: {
+  events: RunnerJobEvent[];
+  liveAssistantText: string;
+  state: StreamState;
+  error: string;
+}) {
+  const visibleEvents = events.filter((event) => !["heartbeat", "hermes.response.delta"].includes(event.event_type)).slice(-18);
+  return (
+    <section className="border border-line bg-paper">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-3 py-3">
+        <div>
+          <p className="text-xs font-semibold uppercase text-muted">Run stream</p>
+          <p className="mt-1 text-xs text-muted">SSE task runtime events</p>
+        </div>
+        <span className={`inline-flex h-6 items-center gap-1 border px-2 text-xs font-medium capitalize ${streamStateTone(state)}`}>
+          <Activity size={12} />
+          {state}
+        </span>
+      </div>
+      {error && (
+        <div className="border-b border-line bg-field px-3 py-2 text-sm text-ink">
+          {error}
+        </div>
+      )}
+      {liveAssistantText && (
+        <div className="border-b border-line px-3 py-3">
+          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-accent">
+            <MessageSquareText size={13} />
+            AI reply
+          </div>
+          <div className="max-h-36 overflow-y-auto border border-line bg-field px-3 py-2">
+            <MessageContent content={liveAssistantText} role="assistant" />
+          </div>
+        </div>
+      )}
+      <ol className="max-h-[34rem] space-y-0 overflow-y-auto">
+        {visibleEvents.map((event) => (
+          <RunEventItem key={event.id} event={event} />
+        ))}
+        {!visibleEvents.length && (
+          <li className="px-3 py-4 text-sm text-muted">Waiting for streamed runner events.</li>
+        )}
+      </ol>
+    </section>
+  );
+}
+
+function RunEventItem({ event }: { event: RunnerJobEvent }) {
+  return (
+    <li className="grid grid-cols-[auto_1fr] gap-3 border-b border-line px-3 py-3 last:border-b-0">
+      <span className={`mt-0.5 grid size-6 place-items-center border ${runEventTone(event.event_type)}`}>
+        {runEventIcon(event.event_type)}
+      </span>
+      <div className="min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm font-semibold">{formatRunEventType(event.event_type)}</p>
+          <span className="shrink-0 text-[11px] text-muted">{formatTime(event.created_at)}</span>
+        </div>
+        {event.message && <p className="mt-1 break-words text-sm leading-5 text-muted">{event.message}</p>}
+        <RunEventExtra event={event} />
+      </div>
+    </li>
+  );
+}
+
+function RunEventExtra({ event }: { event: RunnerJobEvent }) {
+  const data = event.data_json ?? {};
+  const promptPreview = stringValue(data.prompt_preview);
+  const resultPreview = stringValue(data.result_preview);
+  const responsePreview = stringValue(data.response_preview);
+  const toolName = stringValue(data.tool_name);
+  const argumentsPreview = previewJson(data.arguments);
+  const previousTools = previewJson(data.previous_tools);
+
+  if (promptPreview) {
+    return <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap border border-line bg-field p-2 text-xs leading-5 text-ink">{promptPreview}</pre>;
+  }
+  if (resultPreview) {
+    return <p className="mt-2 max-h-24 overflow-y-auto border border-line bg-field p-2 text-xs leading-5 text-muted">{resultPreview}</p>;
+  }
+  if (responsePreview) {
+    return <p className="mt-2 max-h-24 overflow-y-auto border border-line bg-field p-2 text-xs leading-5 text-muted">{responsePreview}</p>;
+  }
+  if (argumentsPreview) {
+    return (
+      <div className="mt-2 space-y-1">
+        {toolName && <p className="text-xs font-medium text-ink">{toolName}</p>}
+        <pre className="max-h-28 overflow-y-auto whitespace-pre-wrap border border-line bg-field p-2 text-xs leading-5 text-muted">{argumentsPreview}</pre>
+      </div>
+    );
+  }
+  if (previousTools) {
+    return <pre className="mt-2 max-h-28 overflow-y-auto whitespace-pre-wrap border border-line bg-field p-2 text-xs leading-5 text-muted">{previousTools}</pre>;
+  }
+  return null;
+}
+
+function MessageContent({ content, role }: { content: string; role: string }) {
+  const toolSteps = parseToolCallSteps(content);
+  if (!toolSteps.length) {
+    if (role === "assistant") {
+      return (
+        <div className="markdown-body text-sm leading-6">
+          <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>
+            {content}
+          </ReactMarkdown>
+        </div>
+      );
+    }
+    return <span className="whitespace-pre-wrap leading-5">{content}</span>;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="inline-flex h-7 items-center gap-2 border border-line bg-paper px-2 text-xs font-semibold uppercase text-muted">
+        <TerminalSquare size={13} />
+        Tool steps
+      </div>
+      <div className="space-y-2">
+        {toolSteps.map((step, index) => (
+          <div key={`${step.name}-${index}`} className="border border-line bg-paper">
+            <div className="flex items-center justify-between gap-3 border-b border-line px-3 py-2">
+              <span className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold">
+                {step.name === "web_search" ? <Search className="shrink-0 text-accent" size={15} /> : <TerminalSquare className="shrink-0 text-accent" size={15} />}
+                <span className="truncate">{formatStepName(step.name)}</span>
+              </span>
+              <span className="shrink-0 text-xs text-muted">Step {index + 1}</span>
+            </div>
+            <div className="divide-y divide-line">
+              {step.parameters.map((parameter) => (
+                <div key={`${step.name}-${index}-${parameter.name}`} className="grid gap-1 px-3 py-2 text-sm sm:grid-cols-[110px_1fr]">
+                  <span className="text-xs font-semibold uppercase text-muted">{parameter.name}</span>
+                  <span className="break-words leading-5 text-ink">{parameter.value || "No value"}</span>
+                </div>
+              ))}
+              {!step.parameters.length && <p className="px-3 py-2 text-sm text-muted">No parameters.</p>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function parseToolCallSteps(content: string): ToolCallStep[] {
+  const normalized = decodeInlineEntities(content);
+  if (!normalized.includes("DSML") || !normalized.includes("tool_calls")) {
+    return [];
+  }
+
+  const steps: ToolCallStep[] = [];
+  const invokePattern = /<[^>]*invoke\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/[^>]*invoke>/g;
+  let invokeMatch: RegExpExecArray | null;
+  while ((invokeMatch = invokePattern.exec(normalized)) !== null) {
+    const parameters: ToolCallStep["parameters"] = [];
+    const parameterPattern = /<[^>]*parameter\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/[^>]*parameter>/g;
+    let parameterMatch: RegExpExecArray | null;
+    while ((parameterMatch = parameterPattern.exec(invokeMatch[2])) !== null) {
+      parameters.push({
+        name: parameterMatch[1],
+        value: cleanStepValue(parameterMatch[2])
+      });
+    }
+    steps.push({ name: invokeMatch[1], parameters });
+  }
+  return steps;
+}
+
+function decodeInlineEntities(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#34;/g, "\"")
+    .replace(/&amp;/g, "&");
+}
+
+function cleanStepValue(value: string): string {
+  return decodeInlineEntities(value)
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function appendUniqueEvent(events: RunnerJobEvent[], event: RunnerJobEvent): RunnerJobEvent[] {
+  if (events.some((current) => current.id === event.id)) {
+    return events;
+  }
+  return [...events, event].slice(-120);
+}
+
+function appendUniqueMessage(messages: Conversation["messages"], message: Conversation["messages"][number]): Conversation["messages"] {
+  if (messages.some((current) => current.id === message.id)) {
+    return messages;
+  }
+  return [...messages, message].sort((left, right) => left.id - right.id);
+}
+
+function mergeMessages(primary: Conversation["messages"], streamed: Conversation["messages"]): Conversation["messages"] {
+  const byId = new Map<number, Conversation["messages"][number]>();
+  for (const message of primary) {
+    byId.set(message.id, message);
+  }
+  for (const message of streamed) {
+    byId.set(message.id, message);
+  }
+  return [...byId.values()].sort((left, right) => left.id - right.id);
+}
+
+function streamDeltaFromEvent(event: RunnerJobEvent): string {
+  if (event.event_type !== "hermes.response.delta") {
+    return "";
+  }
+  return stringValue(event.data_json?.delta) || event.message || "";
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function previewJson(value: unknown): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatStepName(name: string): string {
+  return name.replace(/_/g, " ");
+}
+
+function streamStateTone(state: StreamState): string {
+  if (state === "live") {
+    return "border-accent bg-accentSoft text-accent";
+  }
+  if (state === "error") {
+    return "border-line bg-field text-ink";
+  }
+  return "border-line bg-paper text-muted";
+}
+
+function runEventTone(eventType: string): string {
+  if (eventType.includes("failed")) {
+    return "border-line bg-field text-ink";
+  }
+  if (eventType.includes("completed") || eventType === "completed" || eventType.includes("done")) {
+    return "border-accent bg-accentSoft text-accent";
+  }
+  return "border-line bg-field text-muted";
+}
+
+function runEventIcon(eventType: string) {
+  if (eventType.includes("tool")) {
+    return <TerminalSquare size={13} />;
+  }
+  if (eventType.includes("response") || eventType === "message") {
+    return <Bot size={13} />;
+  }
+  if (eventType.includes("failed")) {
+    return <AlertTriangle size={13} />;
+  }
+  if (eventType.includes("completed")) {
+    return <CheckCircle2 size={13} />;
+  }
+  return <Activity size={13} />;
+}
+
+function formatRunEventType(eventType: string): string {
+  const labels: Record<string, string> = {
+    queued: "Task queued",
+    claimed: "Runner claimed",
+    completed: "Runner completed",
+    failed_retrying: "Retry scheduled",
+    failed_final: "Runner failed",
+    "runner.started": "Runner started",
+    "runner.failed": "Runner failed",
+    "hermes.prompt.ready": "Prompt ready",
+    "hermes.workspace.ready": "Workspace ready",
+    "hermes.agent.started": "Hermes started",
+    "hermes.thinking": "Thinking",
+    "hermes.reasoning": "Reasoning signal",
+    "hermes.status": "Status",
+    "hermes.step": "Agent step",
+    "hermes.tool.started": "Tool started",
+    "hermes.tool.completed": "Tool completed",
+    "hermes.response.done": "Response stream done",
+    "hermes.response.completed": "Response completed",
+    "stub.response.started": "Stub started",
+    "stub.response.completed": "Stub completed"
+  };
+  return labels[eventType] ?? eventType.replace(/\./g, " ").replace(/_/g, " ");
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function ChatPanel() {
@@ -1666,6 +2169,7 @@ function SettingsPanel({ api }: { api: ApiClient }) {
           <p className="text-sm text-muted">Operational preferences for local service management.</p>
         </div>
         <div className="grid divide-y divide-line">
+          <SettingsRow icon={<PackageCheck size={17} />} label="App version" value={`v${health.version ?? APP_VERSION}`} />
           <SettingsRow icon={<Database size={17} />} label="SQLite path" value={health.sqlitePath} />
           <SettingsRow icon={<RefreshCw size={17} />} label="Runner polling interval" value="15 seconds" />
           <SettingsRow icon={<UserRoundCog size={17} />} label="Role policy" value="Local accounts and explicit admin grants" />
