@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -7,8 +7,10 @@ import {
   Bot,
   Check,
   CheckCircle2,
+  ChevronDown,
   CircleUserRound,
   Database,
+  Download,
   ExternalLink,
   FileText,
   KeyRound,
@@ -19,9 +21,11 @@ import {
   MessageSquareText,
   PackageCheck,
   Phone,
+  Plus,
   RefreshCw,
   Rows3,
   Search,
+  Send,
   Server,
   Settings,
   TerminalSquare,
@@ -31,11 +35,14 @@ import {
 import { auditEvents, chatMessages, health, members, orders, runnerJobs, tasks } from "./data/mockData";
 import { apiClient, ApiClient } from "./lib/apiClient";
 import type {
+  ApiTask,
   AuditEvent,
   AuthResponse,
+  Conversation,
   HermesConfig,
   HermesConfigInput,
   Member,
+  MessageAttachment,
   Order,
   RunnerJob,
   ServiceState,
@@ -43,61 +50,155 @@ import type {
   TaskStatus
 } from "./types/domain";
 
-type Route = "landing" | "pricing" | "login" | "set-password" | "user" | "admin";
+type Route = "landing" | "pricing" | "login" | "set-password" | "user" | "admin-login" | "admin";
 type AuthState = { token: string; user: AuthResponse["user"] } | null;
 type FooterLink = { label: string; route: Route } | { label: string; href: string };
 type UserPage = "tasks" | "chat" | "user-center" | "account";
 type AdminPage = "dashboard" | "members" | "orders" | "audit" | "settings";
+type TaskView = "home" | "create" | "detail";
 
-const taskStatuses: Array<"all" | TaskStatus> = ["all", "queued", "running", "blocked", "done", "failed"];
+const taskStatuses: Array<"all" | TaskStatus> = ["all", "open", "queued", "running", "completed", "blocked", "failed"];
+const publicRoutes = new Set<Route>(["landing", "pricing", "login", "set-password", "admin-login"]);
+
+function routeFromPath(pathname: string): Route {
+  if (pathname === "/admin/login" || pathname.startsWith("/admin/login/")) {
+    return "admin-login";
+  }
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    return "admin";
+  }
+  if (pathname === "/console" || pathname.startsWith("/console/")) {
+    return "user";
+  }
+  if (pathname === "/pricing") {
+    return "pricing";
+  }
+  if (pathname === "/login") {
+    return "login";
+  }
+  if (pathname === "/set-password") {
+    return "set-password";
+  }
+  return "landing";
+}
+
+function pathForRoute(route: Route): string {
+  switch (route) {
+    case "pricing":
+      return "/pricing";
+    case "login":
+      return "/login";
+    case "set-password":
+      return "/set-password";
+    case "user":
+      return "/console";
+    case "admin-login":
+      return "/admin/login";
+    case "admin":
+      return "/admin";
+    case "landing":
+    default:
+      return "/";
+  }
+}
+
+function isSuperAdmin(user: AuthResponse["user"]): boolean {
+  return user.roles.some((role) => role.name === "super_admin");
+}
 
 export function App() {
-  const [route, setRoute] = useState<Route>("landing");
+  const [route, setRouteState] = useState<Route>(() => routeFromPath(window.location.pathname));
   const [auth, setAuth] = useState<AuthState>(null);
   const [userPage, setUserPage] = useState<UserPage>("tasks");
   const [adminPage, setAdminPage] = useState<AdminPage>("dashboard");
   const authedApi = useMemo(() => new ApiClient({ token: auth?.token }), [auth?.token]);
 
+  const navigate = useCallback((nextRoute: Route, options: { replace?: boolean } = {}) => {
+    const path = pathForRoute(nextRoute);
+    if (window.location.pathname !== path) {
+      if (options.replace) {
+        window.history.replaceState({}, "", path);
+      } else {
+        window.history.pushState({}, "", path);
+      }
+    }
+    setRouteState(nextRoute);
+  }, []);
+
+  useEffect(() => {
+    const syncRoute = () => setRouteState(routeFromPath(window.location.pathname));
+    window.addEventListener("popstate", syncRoute);
+    return () => window.removeEventListener("popstate", syncRoute);
+  }, []);
+
+  useEffect(() => {
+    if (route === "user" && !auth) {
+      navigate("login", { replace: true });
+      return;
+    }
+    if (route === "admin" && (!auth || !isSuperAdmin(auth.user))) {
+      navigate("admin-login", { replace: true });
+      return;
+    }
+    if (route === "set-password" && !auth) {
+      navigate("login", { replace: true });
+    }
+  }, [auth, navigate, route]);
+
   const handleAuth = (response: AuthResponse) => {
     setAuth({ token: response.token.access_token, user: response.user });
-    const isAdmin = response.user.roles.some((role) => role.name === "admin");
-    setRoute(response.requires_password_setup ? "set-password" : isAdmin ? "admin" : "user");
+    navigate(response.requires_password_setup ? "set-password" : "user");
+  };
+
+  const handleAdminAuth = (response: AuthResponse) => {
+    setAuth({ token: response.token.access_token, user: response.user });
+    navigate("admin");
   };
 
   const handlePasswordSet = (user: AuthResponse["user"]) => {
     setAuth((current) => (current ? { ...current, user } : current));
-    setRoute("user");
+    navigate("user");
   };
 
   const signOut = () => {
     setAuth(null);
-    setRoute("landing");
+    navigate("landing");
   };
 
-  const publicRoute = route === "landing" || route === "pricing" || route === "login" || route === "set-password";
+  const publicRoute = publicRoutes.has(route);
 
   return (
     <div className="min-h-screen bg-mist text-ink">
       {publicRoute ? (
         <>
-          <ProductHeader route={route} onNavigate={setRoute} authed={Boolean(auth)} />
-          {route === "landing" && <LandingPage onGetStarted={() => setRoute("login")} onPricing={() => setRoute("pricing")} />}
-          {route === "pricing" && <PricingPage onGetStarted={() => setRoute("login")} />}
+          <ProductHeader route={route} onNavigate={navigate} authed={Boolean(auth)} />
+          {route === "landing" && <LandingPage onGetStarted={() => navigate("login")} onPricing={() => navigate("pricing")} />}
+          {route === "pricing" && <PricingPage onGetStarted={() => navigate("login")} />}
           {route === "login" && <LoginPage onAuthenticated={handleAuth} />}
+          {route === "admin-login" && <AdminLoginPage onAuthenticated={handleAdminAuth} />}
           {route === "set-password" && auth && <SetPasswordPage api={authedApi} token={auth.token} onComplete={handlePasswordSet} />}
-          <ProductFooter onNavigate={setRoute} />
+          <ProductFooter onNavigate={navigate} />
         </>
-      ) : (
+      ) : route === "user" && auth ? (
         <>
-          <AuthenticatedHeader
-            route={route}
+          <UserHeader
             userLabel={auth?.user.phone ?? auth?.user.email ?? "Local user"}
-            onNavigate={setRoute}
+            onNavigate={navigate}
             onSignOut={signOut}
           />
-          {route === "user" && <UserConsole page={userPage} onPageChange={setUserPage} />}
-          {route === "admin" && <AdminConsole api={authedApi} page={adminPage} onPageChange={setAdminPage} />}
+          <UserConsole api={authedApi} user={auth.user} page={userPage} onPageChange={setUserPage} />
         </>
+      ) : route === "admin" && auth && isSuperAdmin(auth.user) ? (
+        <>
+          <AdminHeader
+            userLabel={auth.user.email ?? auth.user.phone ?? "Super admin"}
+            onNavigate={navigate}
+            onSignOut={signOut}
+          />
+          <AdminConsole api={authedApi} page={adminPage} onPageChange={setAdminPage} />
+        </>
+      ) : (
+        null
       )}
     </div>
   );
@@ -136,17 +237,41 @@ function ProductHeader({ route, onNavigate, authed }: { route: Route; onNavigate
   );
 }
 
-function AuthenticatedHeader({
-  route,
+function UserHeader({
   userLabel,
   onNavigate,
   onSignOut
 }: {
-  route: Route;
   userLabel: string;
   onNavigate: (route: Route) => void;
   onSignOut: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const initials = userInitials(userLabel);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+    const closeOnPointer = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnPointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
+
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-paper/95 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
@@ -159,16 +284,93 @@ function AuthenticatedHeader({
             <span className="block text-[11px] leading-4 text-muted">AI service console</span>
           </span>
         </button>
-        <nav className="flex items-center gap-1 text-sm">
-          <button className={`h-9 border px-3 ${route === "user" ? "border-ink bg-paper font-semibold" : "border-transparent text-muted hover:text-ink"}`} onClick={() => onNavigate("user")}>
-            User console
+        <div className="relative" ref={menuRef}>
+          <button
+            className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-paper py-1 pl-1 pr-3 text-sm font-medium shadow-sm hover:border-ink"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <span className="grid size-8 place-items-center rounded-full bg-ink text-xs font-semibold text-paper">
+              {initials}
+            </span>
+            <span className="hidden max-w-[190px] truncate text-ink sm:block">{userLabel}</span>
+            <ChevronDown className={`text-muted transition ${menuOpen ? "rotate-180" : ""}`} size={15} />
           </button>
-          <button className={`h-9 border px-3 ${route === "admin" ? "border-ink bg-paper font-semibold" : "border-transparent text-muted hover:text-ink"}`} onClick={() => onNavigate("admin")}>
-            Admin
-          </button>
-        </nav>
+          {menuOpen && (
+            <div className="absolute right-0 mt-2 w-64 rounded-lg border border-line bg-paper p-2 text-sm shadow-xl" role="menu">
+              <div className="border-b border-line px-3 py-2">
+                <p className="truncate font-semibold">{userLabel}</p>
+                <p className="mt-0.5 text-xs text-muted">Signed in</p>
+              </div>
+              <button
+                className="mt-2 flex h-10 w-full items-center gap-2 rounded-md px-3 text-left text-muted hover:bg-field hover:text-ink"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onNavigate("user");
+                }}
+              >
+                <Rows3 size={15} />
+                Console
+              </button>
+              <button
+                className="flex h-10 w-full items-center gap-2 rounded-md px-3 text-left text-muted hover:bg-field hover:text-ink"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onSignOut();
+                }}
+              >
+                <LogOut size={15} />
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function userInitials(label: string): string {
+  const trimmed = label.trim();
+  if (!trimmed) {
+    return "U";
+  }
+  if (trimmed.includes("@")) {
+    return trimmed.slice(0, 2).toUpperCase();
+  }
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length > 1) {
+    return `${words[0][0]}${words[1][0]}`.toUpperCase();
+  }
+  return trimmed.slice(0, 2).toUpperCase();
+}
+
+function AdminHeader({
+  userLabel,
+  onNavigate,
+  onSignOut
+}: {
+  userLabel: string;
+  onNavigate: (route: Route) => void;
+  onSignOut: () => void;
+}) {
+  return (
+    <header className="sticky top-0 z-30 border-b border-line bg-paper/95 backdrop-blur">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6">
+        <button className="flex items-center gap-2 text-left" onClick={() => onNavigate("admin")}>
+          <span className="grid size-8 place-items-center border border-ink bg-ink text-paper">
+            <Database size={16} />
+          </span>
+          <span>
+            <span className="block text-sm font-semibold leading-4">OpenChimney Admin</span>
+            <span className="block text-[11px] leading-4 text-muted">Super admin console</span>
+          </span>
+        </button>
         <div className="hidden items-center gap-2 text-sm sm:flex">
-          <span className="max-w-[180px] truncate text-muted">{userLabel}</span>
+          <span className="max-w-[220px] truncate text-muted">{userLabel}</span>
           <button className="inline-flex h-9 items-center gap-2 border border-line px-3 font-medium hover:border-ink" onClick={onSignOut}>
             <LogOut size={15} />
             Sign out
@@ -189,7 +391,7 @@ function LandingPage({ onGetStarted, onPricing }: { onGetStarted: () => void; on
               AI service scaffold for publishing agent Skills online.
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-muted">
-              A compact starter for multi-user login, task queues, Hermes-backed agent jobs, SQLite operations, admin review, and Docker deployment on one small server.
+              A compact starter for multi-user login, task queues, Hermes-backed agent jobs, SQLite operations, operations review, and Docker deployment on one small server.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <button className="btn-primary" onClick={onGetStarted}>
@@ -221,10 +423,10 @@ function LandingPage({ onGetStarted, onPricing }: { onGetStarted: () => void; on
 
       <section className="border-b border-line bg-mist">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
-          <SectionTitle title="Modules" copy="The template surface is deliberately operational: accounts, task work, agent execution, runner handoff, and admin review." />
+          <SectionTitle title="Modules" copy="The template surface is deliberately operational: accounts, task work, agent execution, runner handoff, and operations review." />
           <div className="mt-6 grid gap-0 border border-line bg-paper md:grid-cols-4">
-            <ModuleCell icon={<CircleUserRound size={18} />} title="Local accounts" copy="User, member, and admin roles without external identity requirements." />
-            <ModuleCell icon={<PackageCheck size={18} />} title="Orders" copy="SQLite-backed order rows with a preview path for admin review." />
+            <ModuleCell icon={<CircleUserRound size={18} />} title="Local accounts" copy="User, member, and internal roles without external identity requirements." />
+            <ModuleCell icon={<PackageCheck size={18} />} title="Orders" copy="SQLite-backed order rows with a preview path for operations review." />
             <ModuleCell icon={<Rows3 size={18} />} title="Tasks" copy="Queueable work items, selected detail, status filters, and runner events." />
             <ModuleCell icon={<MessageSquareText size={18} />} title="Agent chat" copy="Hermes-ready conversation surfaces with local fallback data." />
           </div>
@@ -238,7 +440,7 @@ function LandingPage({ onGetStarted, onPricing }: { onGetStarted: () => void; on
             <div className="mt-6 space-y-3 text-sm text-muted">
               <p>1. Runner claims work through `POST /api/runner/jobs/claim`.</p>
               <p>2. Claimed jobs heartbeat and report completion through task-scoped REST routes.</p>
-              <p>3. Admins see queue depth, failed attempts, and audit events without direct runner coupling.</p>
+              <p>3. Operators see queue depth, failed attempts, and audit events without direct runner coupling.</p>
             </div>
           </div>
           <div className="min-w-0 border border-line">
@@ -255,7 +457,7 @@ function LandingPage({ onGetStarted, onPricing }: { onGetStarted: () => void; on
           <SectionTitle title="SQLite operations" copy="Tables, transactions, and audit trail are first-class UI concepts, not hidden implementation details." />
           <div className="mt-6 grid border border-line bg-paper md:grid-cols-3">
             <OperationCell title="Transactional writes" copy="Task and order mutations are represented as single logical operations." />
-            <OperationCell title="Local database path" copy="Admin sees the active SQLite file and health without shell access." />
+            <OperationCell title="Local database path" copy="Operators see the active SQLite file and health without shell access." />
             <OperationCell title="Audit stream" copy="Account, runner, and database events share a compact chronological stream." />
           </div>
         </div>
@@ -270,7 +472,7 @@ function PricingPage({ onGetStarted }: { onGetStarted: () => void }) {
       name: "Starter",
       price: "$0",
       copy: "For hobby projects and local apps.",
-      features: ["SQLite database", "User and admin consoles", "REST API", "Polling task runner"]
+      features: ["SQLite database", "User console and operations tools", "REST API", "Polling task runner"]
     },
     {
       name: "Pro",
@@ -293,7 +495,7 @@ function PricingPage({ onGetStarted }: { onGetStarted: () => void }) {
         <div>
           <h1 className="max-w-sm text-4xl font-semibold leading-tight">Simple pricing. Everything included.</h1>
           <p className="mt-4 max-w-sm text-base leading-7 text-muted">
-            One SQLite-first codebase with public pages, user console, admin console, API, and remote runner.
+            One SQLite-first codebase with public pages, user console, operations tooling, API, and remote runner.
           </p>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
@@ -325,9 +527,8 @@ function PricingPage({ onGetStarted }: { onGetStarted: () => void }) {
 }
 
 function LoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthResponse) => void }) {
-  const [mode, setMode] = useState<"sms" | "phone-password" | "email-password">("sms");
+  const [mode, setMode] = useState<"sms" | "phone-password">("sms");
   const [phone, setPhone] = useState("+1 (555) 123-4567");
-  const [email, setEmail] = useState("admin@example.com");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [devCode, setDevCode] = useState("");
@@ -365,11 +566,7 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthRespon
     setBusy(true);
     setError("");
     try {
-      onAuthenticated(
-        mode === "email-password"
-          ? await apiClient.loginWithEmail(email, password)
-          : await apiClient.loginWithPhonePassword(phone, password)
-      );
+      onAuthenticated(await apiClient.loginWithPhonePassword(phone, password));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in");
     } finally {
@@ -392,37 +589,24 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthRespon
           </div>
         </div>
         <section className="border border-line bg-paper">
-          <div className="grid grid-cols-3 border-b border-line">
+          <div className="grid grid-cols-2 border-b border-line">
             <button className={`h-12 text-sm font-semibold ${mode === "sms" ? "border-b-2 border-accent text-accent" : "text-muted"}`} onClick={() => setMode("sms")}>
               Phone + SMS
             </button>
             <button className={`h-12 text-sm font-semibold ${mode === "phone-password" ? "border-b-2 border-accent text-accent" : "text-muted"}`} onClick={() => setMode("phone-password")}>
               Phone password
             </button>
-            <button className={`h-12 text-sm font-semibold ${mode === "email-password" ? "border-b-2 border-accent text-accent" : "text-muted"}`} onClick={() => setMode("email-password")}>
-              Admin email
-            </button>
           </div>
           <div className="space-y-4 p-5">
-            {mode === "email-password" ? (
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium">Email</span>
-                <div className="flex h-11 items-center border border-line bg-field px-3 focus-within:border-accent">
-                  <UserRoundCog size={16} className="mr-2 text-muted" />
-                  <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" value={email} onChange={(event) => setEmail(event.target.value)} />
-                </div>
-              </label>
-            ) : (
-              <label className="block">
-                <span className="mb-2 block text-sm font-medium">Phone number</span>
-                <div className="flex h-11 items-center border border-line bg-field px-3 focus-within:border-accent">
-                  <Phone size={16} className="mr-2 text-muted" />
-                  <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" value={phone} onChange={(event) => setPhone(event.target.value)} />
-                </div>
-              </label>
-            )}
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium">Phone number</span>
+              <div className="flex h-11 items-center border border-line bg-field px-3 focus-within:border-accent">
+                <Phone size={16} className="mr-2 text-muted" />
+                <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" value={phone} onChange={(event) => setPhone(event.target.value)} />
+              </div>
+            </label>
 
-            {mode === "phone-password" || mode === "email-password" ? (
+            {mode === "phone-password" ? (
               <>
                 <label className="block">
                   <span className="mb-2 block text-sm font-medium">Password</span>
@@ -459,6 +643,74 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthRespon
                 </button>
               </>
             )}
+            {error && <p className="border border-line bg-field p-3 text-sm text-ink">{error}</p>}
+          </div>
+        </section>
+      </section>
+    </main>
+  );
+}
+
+function AdminLoginPage({ onAuthenticated }: { onAuthenticated: (response: AuthResponse) => void }) {
+  const [email, setEmail] = useState("superadmin@example.com");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await apiClient.loginWithEmail(email, password);
+      if (!isSuperAdmin(response.user)) {
+        setError("Super admin role required");
+        return;
+      }
+      onAuthenticated(response);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to sign in");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="border-b border-line bg-mist">
+      <section className="mx-auto grid min-h-[620px] max-w-7xl gap-10 px-4 py-14 sm:px-6 lg:grid-cols-[1fr_420px] lg:items-center">
+        <div className="max-w-xl">
+          <h1 className="text-4xl font-semibold leading-tight">Super admin sign in.</h1>
+          <p className="mt-4 text-base leading-7 text-muted">
+            Administrative operations use a separate account and direct URL at /admin.
+          </p>
+          <div className="mt-8 grid border border-line bg-paper md:grid-cols-3">
+            <OperationCell title="1. URL" copy="/admin is separated from /console." />
+            <OperationCell title="2. Role" copy="Only super_admin can enter." />
+            <OperationCell title="3. Audit" copy="Operational changes stay attributable." />
+          </div>
+        </div>
+        <section className="border border-line bg-paper">
+          <div className="border-b border-line px-5 py-4">
+            <h2 className="text-base font-semibold">Admin access</h2>
+            <p className="mt-1 text-sm text-muted">Use the seeded super admin account.</p>
+          </div>
+          <div className="space-y-4 p-5">
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium">Email</span>
+              <div className="flex h-11 items-center border border-line bg-field px-3 focus-within:border-accent">
+                <UserRoundCog size={16} className="mr-2 text-muted" />
+                <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" value={email} onChange={(event) => setEmail(event.target.value)} />
+              </div>
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium">Password</span>
+              <div className="flex h-11 items-center border border-line bg-field px-3 focus-within:border-accent">
+                <LockKeyhole size={16} className="mr-2 text-muted" />
+                <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              </div>
+            </label>
+            <button className="btn-primary w-full justify-center" disabled={busy || !email || !password} onClick={submit}>
+              Sign in
+            </button>
             {error && <p className="border border-line bg-field p-3 text-sm text-ink">{error}</p>}
           </div>
         </section>
@@ -541,7 +793,7 @@ function ProductFooter({ onNavigate }: { onNavigate: (route: Route) => void }) {
           <div>
             <h2 className="text-xl font-semibold">Build the product surface and the worker boundary together.</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#c7ced8]">
-              Start with public pages, phone auth, user operations, admin review, and a separately deployed task runner that talks to the API over REST.
+              Start with public pages, phone auth, user operations, operations review, and a separately deployed task runner that talks to the API over REST.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -564,13 +816,13 @@ function ProductFooter({ onNavigate }: { onNavigate: (route: Route) => void }) {
               <span className="text-base font-semibold">OpenChimney</span>
             </div>
             <p className="mt-4 max-w-sm text-sm leading-6 text-[#c7ced8]">
-              SQLite-first starter for public acquisition, user console workflows, super admin operations, REST API, and remote AI task runners.
+              SQLite-first starter for public acquisition, user console workflows, internal operations, REST API, and remote AI task runners.
             </p>
             <div className="mt-5 grid max-w-sm gap-2 text-xs text-[#c7ced8] sm:grid-cols-2">
               <span className="border border-white/10 px-3 py-2">SQLite WAL-ready</span>
               <span className="border border-white/10 px-3 py-2">REST runner polling</span>
               <span className="border border-white/10 px-3 py-2">Phone auth flow</span>
-              <span className="border border-white/10 px-3 py-2">Admin audit views</span>
+              <span className="border border-white/10 px-3 py-2">Audit views</span>
             </div>
           </div>
           <FooterColumn title="Product" links={productLinks} onNavigate={onNavigate} />
@@ -613,19 +865,96 @@ function FooterColumn({ title, links, onNavigate }: { title: string; links: Foot
   );
 }
 
-function UserConsole({ page, onPageChange }: { page: UserPage; onPageChange: (page: UserPage) => void }) {
+const defaultTaskPrompt = "请从 GitHub 主页搜集信息，创建一个关于 Hermes agent 的使用介绍ppt";
+
+function UserConsole({
+  api,
+  user,
+  page,
+  onPageChange
+}: {
+  api: ApiClient;
+  user: AuthResponse["user"];
+  page: UserPage;
+  onPageChange: (page: UserPage) => void;
+}) {
   const [statusFilter, setStatusFilter] = useState<"all" | TaskStatus>("all");
   const [query, setQuery] = useState("");
-  const [selectedTaskId, setSelectedTaskId] = useState(tasks[0].id);
-  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? tasks[0];
+  const [apiTasks, setApiTasks] = useState<ApiTask[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [taskView, setTaskView] = useState<TaskView>("home");
+  const [taskPrompt, setTaskPrompt] = useState(defaultTaskPrompt);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+
+  const loadConsoleData = async () => {
+    const [taskRows, conversationRows] = await Promise.all([api.apiTasks(), api.conversations()]);
+    setApiTasks(taskRows);
+    setConversations(conversationRows);
+  };
+
+  useEffect(() => {
+    void loadConsoleData().catch((err) => setStatus(err instanceof Error ? err.message : "Unable to load tasks"));
+    const timer = window.setInterval(() => {
+      void loadConsoleData().catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [api]);
+
+  const selectedTask = apiTasks.find((task) => task.id === selectedTaskId) ?? null;
+  const selectedConversation = selectedTask
+    ? conversations.find((conversation) => conversation.task_id === selectedTask.id) ?? null
+    : null;
 
   const visibleTasks = useMemo(() => {
-    return tasks.filter((task) => {
+    return apiTasks.filter((task) => {
       const matchesStatus = statusFilter === "all" || task.status === statusFilter;
-      const matchesQuery = [task.id, task.title, task.owner, task.runner].join(" ").toLowerCase().includes(query.toLowerCase());
+      const matchesQuery = [task.id, task.title, task.description, task.status].join(" ").toLowerCase().includes(query.toLowerCase());
       return matchesStatus && matchesQuery;
     });
-  }, [query, statusFilter]);
+  }, [apiTasks, query, statusFilter]);
+
+  const createAndQueueTask = async () => {
+    const prompt = taskPrompt.trim();
+    if (!prompt) {
+      setStatus("Task prompt is required");
+      return;
+    }
+    setBusy(true);
+    setStatus("");
+    try {
+      const task = await api.createTask({
+        title: prompt.length > 84 ? `${prompt.slice(0, 81)}...` : prompt,
+        description: prompt,
+        priority: "normal"
+      });
+      await api.sendTaskMessage(task.id, prompt);
+      setSelectedTaskId(task.id);
+      await loadConsoleData();
+      setTaskView("detail");
+      setStatus(`Task ${task.id} queued`);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Unable to create task");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const userLabel = user.display_name ?? user.phone ?? user.email ?? `User ${user.id}`;
+  const showTaskHome = () => {
+    setTaskView("home");
+    setStatus("");
+  };
+  const openTaskDetail = (taskId: number) => {
+    setSelectedTaskId(taskId);
+    setTaskView("detail");
+    setStatus("");
+  };
+  const openCreateTask = () => {
+    setTaskView("create");
+    setStatus("");
+  };
 
   return (
     <ConsoleLayout
@@ -637,68 +966,113 @@ function UserConsole({ page, onPageChange }: { page: UserPage; onPageChange: (pa
         { id: "account", label: "Account", icon: <KeyRound size={16} /> }
       ]}
       active={page}
-      onChange={(value) => onPageChange(value as UserPage)}
+      onChange={(value) => {
+        const nextPage = value as UserPage;
+        onPageChange(nextPage);
+        if (nextPage === "tasks") {
+          showTaskHome();
+        }
+      }}
     >
-      {page === "tasks" && (
-        <div className="grid min-h-[calc(100vh-7rem)] gap-4 lg:grid-cols-[1fr_360px]">
-          <section className="border border-line bg-paper">
-            <div className="flex flex-col gap-3 border-b border-line px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">Task management</h2>
-                <p className="text-sm text-muted">Filter, select, and review runner-owned work.</p>
+      {page === "tasks" && taskView === "home" && (
+        <section className="space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold leading-tight">Tasks</h1>
+              <p className="mt-1 text-sm text-muted">{visibleTasks.length} visible tasks</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={15} />
+                <input className="h-10 w-64 max-w-full border border-line bg-field pl-9 pr-3 text-sm outline-none focus:border-accent" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tasks" />
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-2.5 text-muted" size={15} />
-                  <input className="h-10 w-56 border border-line bg-field pl-9 pr-3 text-sm outline-none focus:border-accent" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search tasks" />
-                </div>
-                <ListFilter size={16} className="text-muted" />
-                <select className="h-10 border border-line bg-field px-3 text-sm outline-none focus:border-accent" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | TaskStatus)}>
-                  {taskStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
+              <ListFilter size={16} className="text-muted" />
+              <select className="h-10 border border-line bg-field px-3 text-sm outline-none focus:border-accent" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | TaskStatus)}>
+                {taskStatuses.map((nextStatus) => (
+                  <option key={nextStatus} value={nextStatus}>
+                    {nextStatus}
+                  </option>
+                ))}
+              </select>
+              <button className="inline-flex h-10 items-center gap-2 border border-line px-3 text-sm font-medium hover:border-ink" onClick={() => void loadConsoleData()}>
+                <RefreshCw size={15} />
+                Refresh
+              </button>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {visibleTasks.map((task) => (
+              <TaskCard key={task.id} task={task} owner={userLabel} onOpen={() => openTaskDetail(task.id)} />
+            ))}
+            <button
+              className="flex min-h-44 flex-col items-center justify-center gap-3 border border-dashed border-line bg-paper p-5 text-center transition hover:border-accent hover:bg-accentSoft"
+              onClick={openCreateTask}
+            >
+              <span className="grid size-12 place-items-center rounded-full border border-accent bg-paper text-accent">
+                <Plus size={22} />
+              </span>
+              <span className="text-base font-semibold">+ 新建任务</span>
+            </button>
+          </div>
+          {!visibleTasks.length && (
+            <p className="text-sm text-muted">No tasks match the current filters.</p>
+          )}
+        </section>
+      )}
+      {page === "tasks" && taskView === "create" && (
+        <section className="space-y-4">
+          <button className="inline-flex h-10 items-center gap-2 border border-line px-3 text-sm font-medium hover:border-ink" onClick={showTaskHome}>
+            <ArrowRight className="rotate-180" size={15} />
+            Back to tasks
+          </button>
+          <div className="border border-line bg-paper">
+            <div className="border-b border-line px-4 py-4">
+              <h1 className="text-xl font-semibold">Create runner task</h1>
+              <p className="mt-1 text-sm text-muted">Submit a task message that the REST runner will claim and execute.</p>
+            </div>
+            <div className="space-y-3 p-4">
+              <textarea
+                className="min-h-40 w-full resize-y border border-line bg-field px-3 py-2 text-sm leading-6 outline-none focus:border-accent"
+                value={taskPrompt}
+                onChange={(event) => setTaskPrompt(event.target.value)}
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <button className="btn-primary h-10" disabled={busy} onClick={createAndQueueTask}>
+                  <Plus size={16} />
+                  {busy ? "Creating..." : "Create task"}
+                </button>
+                {status && <span className="text-sm text-muted">{status}</span>}
               </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-line bg-field text-xs uppercase text-muted">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Task</th>
-                    <th className="px-4 py-3 font-medium">Owner</th>
-                    <th className="px-4 py-3 font-medium">Priority</th>
-                    <th className="px-4 py-3 font-medium">Runner</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {visibleTasks.map((task) => (
-                    <tr key={task.id} className={`cursor-pointer transition hover:bg-field ${selectedTask.id === task.id ? "bg-accentSoft" : "bg-paper"}`} onClick={() => setSelectedTaskId(task.id)}>
-                      <td className="px-4 py-3">
-                        <span className="block font-medium">{task.title}</span>
-                        <span className="text-xs text-muted">{task.id} · updated {task.updatedAt}</span>
-                      </td>
-                      <td className="px-4 py-3 text-muted">{task.owner}</td>
-                      <td className="px-4 py-3 capitalize">{task.priority}</td>
-                      <td className="px-4 py-3 text-muted">{task.runner}</td>
-                      <td className="px-4 py-3">
-                        <StatusPill status={task.status} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-          <TaskDetail task={selectedTask} />
-        </div>
+          </div>
+        </section>
+      )}
+      {page === "tasks" && taskView === "detail" && (
+        <TaskDetail api={api} task={selectedTask} conversation={selectedConversation} owner={userLabel} onBack={showTaskHome} onRefresh={loadConsoleData} />
       )}
       {page === "chat" && <ChatPanel />}
       {page === "user-center" && <UserCenter />}
       {page === "account" && <AccountPanel />}
     </ConsoleLayout>
+  );
+}
+
+function TaskCard({ task, owner, onOpen }: { task: ApiTask; owner: string; onOpen: () => void }) {
+  const description = task.description || "No detail";
+  return (
+    <button className="min-h-44 border border-line bg-paper p-4 text-left transition hover:-translate-y-0.5 hover:border-accent hover:shadow-sm" onClick={onOpen}>
+      <div className="flex items-start justify-between gap-3">
+        <span className="text-xs font-semibold uppercase text-muted">#{task.id}</span>
+        <StatusPill status={task.status} />
+      </div>
+      <h2 className="mt-4 min-h-12 max-h-12 overflow-hidden break-words text-base font-semibold leading-6">{task.title}</h2>
+      <p className="mt-2 min-h-10 max-h-10 overflow-hidden break-words text-sm leading-5 text-muted">{description.length > 118 ? `${description.slice(0, 115)}...` : description}</p>
+      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-line pt-3 text-xs text-muted">
+        <span className="truncate">{owner}</span>
+        <span className="text-right capitalize">{task.priority}</span>
+        <span className="col-span-2">Updated {formatDate(task.updated_at)}</span>
+      </div>
+    </button>
   );
 }
 
@@ -779,7 +1153,7 @@ function ConsoleLayout<T extends string>({
       <aside className="border border-line bg-paper lg:min-h-[calc(100vh-5.5rem)]">
         <div className="border-b border-line px-4 py-4">
           <h1 className="text-base font-semibold">{title}</h1>
-          <p className="text-xs text-muted">Local roles and mock API state</p>
+          <p className="text-xs text-muted">Local roles and API state</p>
         </div>
         <nav className="flex gap-1 overflow-x-auto p-2 lg:block lg:space-y-1">
           {navItems.map((item) => (
@@ -801,67 +1175,194 @@ function ConsoleLayout<T extends string>({
   );
 }
 
-function TaskDetail({ task }: { task: Task }) {
+function TaskDetail({
+  api,
+  task,
+  conversation,
+  owner,
+  onBack,
+  onRefresh
+}: {
+  api: ApiClient;
+  task: ApiTask | null;
+  conversation: Conversation | null;
+  owner: string;
+  onBack: () => void;
+  onRefresh: () => Promise<void>;
+}) {
+  const [messageText, setMessageText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [status, setStatus] = useState("");
+
+  if (!task) {
+    return (
+      <section className="space-y-4">
+        <button className="inline-flex h-10 items-center gap-2 border border-line px-3 text-sm font-medium hover:border-ink" onClick={onBack}>
+          <ArrowRight className="rotate-180" size={15} />
+          Back to tasks
+        </button>
+        <div className="border border-line bg-paper p-4">
+          <p className="text-sm text-muted">Select or create a task.</p>
+        </div>
+      </section>
+    );
+  }
+
+  const sendMessage = async () => {
+    const content = messageText.trim();
+    if (!content) {
+      return;
+    }
+    setBusy(true);
+    setStatus("");
+    try {
+      await api.sendTaskMessage(task.id, content);
+      setMessageText("");
+      await onRefresh();
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Unable to send message");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const download = async (attachment: MessageAttachment) => {
+    setDownloadingId(attachment.id);
+    setStatus("");
+    try {
+      await api.downloadAttachment(attachment);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Unable to download file");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const attachments = conversation?.messages.flatMap((message) => message.attachments) ?? [];
+
   return (
-    <aside className="border border-line bg-paper">
-      <div className="border-b border-line px-4 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">{task.id}</h2>
-          <StatusPill status={task.status} />
+    <section className="space-y-4">
+      <button className="inline-flex h-10 items-center gap-2 border border-line px-3 text-sm font-medium hover:border-ink" onClick={onBack}>
+        <ArrowRight className="rotate-180" size={15} />
+        Back to tasks
+      </button>
+      <div className="border border-line bg-paper">
+        <div className="border-b border-line px-4 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase text-muted">Task #{task.id}</p>
+              <h1 className="mt-1 break-words text-2xl font-semibold leading-tight">{task.title}</h1>
+              <p className="mt-1 text-sm text-muted">Updated {formatDate(task.updated_at)}</p>
+            </div>
+            <div className="self-start sm:self-auto">
+              <StatusPill status={task.status} />
+            </div>
+          </div>
         </div>
-        <p className="mt-1 text-sm text-muted">{task.title}</p>
+        <div className="grid gap-5 p-4 xl:grid-cols-[1fr_360px]">
+          <div className="space-y-5">
+            <DetailBlock label="Detail" value={task.description || "No detail"} />
+            <TaskChat
+              messages={conversation?.messages ?? []}
+              value={messageText}
+              busy={busy}
+              onChange={setMessageText}
+              onSend={sendMessage}
+            />
+          </div>
+          <div className="space-y-5">
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase text-muted">Downloads</p>
+              <div className="space-y-2">
+                {attachments.map((attachment) => (
+                  <button
+                    key={attachment.id}
+                    className="flex min-h-10 w-full items-center justify-between gap-3 border border-line bg-field px-3 text-left text-sm hover:border-ink"
+                    onClick={() => void download(attachment)}
+                  >
+                    <span className="min-w-0 truncate">{attachment.file_name}</span>
+                    <span className="inline-flex shrink-0 items-center gap-1 text-accent">
+                      <Download size={15} />
+                      {downloadingId === attachment.id ? "Downloading" : "Download"}
+                    </span>
+                  </button>
+                ))}
+                {!attachments.length && <p className="text-sm text-muted">No files yet.</p>}
+              </div>
+              {status && <p className="mt-2 text-sm text-muted">{status}</p>}
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase text-muted">Runner events</p>
+              <ol className="space-y-2">
+                {["Task stored in SQLite", task.status === "completed" ? "Runner completed" : "Runner queue active", attachments.length ? "Artifact available" : "Waiting for artifact"].map((event) => (
+                  <li key={event} className="flex gap-2 text-sm">
+                    <CheckCircle2 className="mt-0.5 text-accent" size={15} />
+                    <span>{event}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <div className="grid grid-cols-2 border border-line">
+              <MetricCell label="Owner" value={owner} />
+              <MetricCell label="Priority" value={task.priority} />
+              <MetricCell label="Runner" value="REST runner" />
+              <MetricCell label="Updated" value={formatDate(task.updated_at)} />
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="space-y-5 p-4">
-        <DetailBlock label="Detail" value={task.details} />
-        <TaskChat />
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase text-muted">Runner events</p>
-          <ol className="space-y-2">
-            {task.events.map((event) => (
-              <li key={event} className="flex gap-2 text-sm">
-                <CheckCircle2 className="mt-0.5 text-accent" size={15} />
-                <span>{event}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-        <div className="grid grid-cols-2 border border-line">
-          <MetricCell label="Owner" value={task.owner} />
-          <MetricCell label="Priority" value={task.priority} />
-          <MetricCell label="Runner" value={task.runner} />
-          <MetricCell label="Updated" value={task.updatedAt} />
-        </div>
-      </div>
-    </aside>
+    </section>
   );
 }
 
-function TaskChat() {
+function TaskChat({
+  messages,
+  value,
+  busy,
+  onChange,
+  onSend
+}: {
+  messages: Conversation["messages"];
+  value: string;
+  busy: boolean;
+  onChange: (value: string) => void;
+  onSend: () => void;
+}) {
   return (
     <div>
       <p className="mb-2 text-xs font-semibold uppercase text-muted">AI chat</p>
       <div className="space-y-2">
-        {chatMessages.slice(0, 3).map((message, index) => (
+        {messages.map((message) => (
           <div
-            key={`${message.from}-${index}`}
+            key={message.id}
             className={`border border-line px-3 py-2 text-sm ${
-              message.from === "user" ? "bg-accentSoft" : "bg-field"
+              message.role === "user" ? "bg-accentSoft" : "bg-field"
             }`}
           >
             <span className="mb-1 block text-[11px] font-semibold uppercase text-muted">
-              {message.from}
+              {message.role}
             </span>
-            <span className="leading-5">{message.text}</span>
+            <span className="whitespace-pre-wrap leading-5">{message.content}</span>
           </div>
         ))}
+        {!messages.length && <p className="text-sm text-muted">No messages yet.</p>}
       </div>
       <div className="mt-2 flex border border-line bg-field">
         <input
           className="h-10 min-w-0 flex-1 bg-transparent px-3 text-sm outline-none"
           placeholder="Message this task"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              onSend();
+            }
+          }}
         />
-        <button className="h-10 border-l border-line px-3 text-sm font-medium text-accent">
-          Send
+        <button className="inline-flex h-10 items-center gap-2 border-l border-line px-3 text-sm font-medium text-accent disabled:text-muted" disabled={busy} onClick={onSend}>
+          <Send size={15} />
+          {busy ? "Sending" : "Send"}
         </button>
       </div>
     </div>
@@ -870,7 +1371,7 @@ function TaskChat() {
 
 function ChatPanel() {
   return (
-    <section className="grid gap-4 lg:grid-cols-[1fr_320px]">
+    <section>
       <div className="border border-line bg-paper">
         <div className="border-b border-line px-4 py-4">
           <h2 className="text-lg font-semibold">Compact AI chat</h2>
@@ -889,7 +1390,6 @@ function ChatPanel() {
           </div>
         </div>
       </div>
-      <TaskDetail task={tasks[2]} />
     </section>
   );
 }
@@ -983,6 +1483,14 @@ function AuditStream({ events, compact = false }: { events: AuditEvent[]; compac
       </div>
     </section>
   );
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
 }
 
 function SettingsPanel({ api }: { api: ApiClient }) {
@@ -1277,7 +1785,7 @@ function HealthBox({ icon, label, value, state }: { icon: ReactNode; label: stri
 }
 
 function StatusPill({ status, label }: { status: TaskStatus | ServiceState; label?: string }) {
-  const tone = status === "healthy" || status === "done" ? "border-accent bg-accentSoft text-accent" : status === "degraded" || status === "blocked" || status === "failed" ? "border-line bg-field text-ink" : "border-line bg-paper text-muted";
+  const tone = status === "healthy" || status === "done" || status === "completed" ? "border-accent bg-accentSoft text-accent" : status === "degraded" || status === "blocked" || status === "failed" ? "border-line bg-field text-ink" : "border-line bg-paper text-muted";
   return <span className={`inline-flex h-6 items-center border px-2 text-xs font-medium capitalize ${tone}`}>{label ?? status}</span>;
 }
 

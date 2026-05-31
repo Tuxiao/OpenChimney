@@ -13,6 +13,7 @@ from .models import SessionToken, User
 from .security import hash_token
 
 bearer_scheme = HTTPBearer(auto_error=False)
+SUPER_ADMIN_ROLE = "super_admin"
 
 
 def get_config(request: Request) -> AppConfig:
@@ -42,9 +43,13 @@ def current_user(
 
 
 def require_admin(user: Annotated[User, Depends(current_user)]) -> User:
-    if "admin" not in {role.name for role in user.roles}:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin role required")
+    if not has_super_admin_role(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Super admin role required")
     return user
+
+
+def has_super_admin_role(user: User) -> bool:
+    return SUPER_ADMIN_ROLE in {role.name for role in user.roles}
 
 
 def require_runner_key(

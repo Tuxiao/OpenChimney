@@ -1,4 +1,4 @@
-export type TaskStatus = "queued" | "running" | "blocked" | "done" | "failed";
+export type TaskStatus = "open" | "queued" | "running" | "blocked" | "completed" | "done" | "failed";
 export type TaskPriority = "low" | "normal" | "high";
 export type ServiceState = "healthy" | "degraded" | "offline";
 
@@ -12,6 +12,54 @@ export interface Task {
   updatedAt: string;
   details: string;
   events: string[];
+}
+
+export interface ApiTask {
+  id: number;
+  owner_user_id: number;
+  title: string;
+  description?: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  due_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MessageAttachment {
+  id: number;
+  file_name: string;
+  content_type?: string | null;
+  url: string;
+  size_bytes?: number | null;
+  created_at: string;
+}
+
+export interface ConversationMessage {
+  id: number;
+  conversation_id: number;
+  sender_user_id?: number | null;
+  role: string;
+  content: string;
+  metadata_json: Record<string, unknown>;
+  attachments: MessageAttachment[];
+  created_at: string;
+}
+
+export interface Conversation {
+  id: number;
+  owner_user_id: number;
+  task_id?: number | null;
+  title: string;
+  status: string;
+  messages: ConversationMessage[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskMessageResponse {
+  message: ConversationMessage;
+  runner_job_id: number;
 }
 
 export interface RunnerJob {

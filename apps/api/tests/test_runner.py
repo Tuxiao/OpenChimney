@@ -149,7 +149,7 @@ def test_runner_key_is_required(client):
 def test_admin_can_save_hermes_config_and_runner_can_read_secret(client):
     login = client.post(
         "/api/auth/login",
-        json={"email": "admin@example.com", "password": "admin1234"},
+        json={"email": "superadmin@example.com", "password": "superadmin1234"},
     )
     assert login.status_code == 200, login.text
     token = login.json()["token"]["access_token"]
@@ -199,7 +199,7 @@ def test_admin_can_save_hermes_config_and_runner_can_read_secret(client):
 def test_admin_can_save_hermes_config_and_runner_can_read_secret(client):
     login = client.post(
         "/api/auth/login",
-        json={"email": "admin@example.com", "password": "admin1234"},
+        json={"email": "superadmin@example.com", "password": "superadmin1234"},
     )
     assert login.status_code == 200, login.text
     token = login.json()["token"]["access_token"]

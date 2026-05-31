@@ -10,10 +10,13 @@ services:
       APP_ENV: ${APP_ENV:-production}
       API_WORKERS: ${API_WORKERS:-1}
       DATABASE_URL: sqlite:////data/app.db
+      ARTIFACT_STORAGE_DIR: /data/artifacts
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       RUNNER_API_KEY: ${RUNNER_API_KEY:?set RUNNER_API_KEY in .env}
       DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL:-admin@example.com}
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:?set DEFAULT_ADMIN_PASSWORD in .env}
+      SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-superadmin@example.com}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:?set SUPER_ADMIN_PASSWORD in .env}
     volumes:
       - sqlite_data:/data
     healthcheck:

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class AppConfig:
     database_url: str = "sqlite:///./data/api.sqlite3"
+    artifact_storage_dir: str = "./data/artifacts"
     runner_key: str = "dev-runner-key"
     cors_origins: tuple[str, ...] = ("*",)
     session_ttl_seconds: int = 60 * 60 * 24 * 30
@@ -14,11 +15,14 @@ class AppConfig:
     seed_on_startup: bool = True
     default_admin_email: str = "admin@example.com"
     default_admin_password: str = "admin1234"
+    super_admin_email: str = "superadmin@example.com"
+    super_admin_password: str = "superadmin1234"
 
     @classmethod
     def from_env(cls) -> "AppConfig":
         return cls(
             database_url=os.getenv("DATABASE_URL", cls.database_url),
+            artifact_storage_dir=os.getenv("ARTIFACT_STORAGE_DIR", cls.artifact_storage_dir),
             runner_key=os.getenv("RUNNER_KEY", os.getenv("RUNNER_API_KEY", cls.runner_key)),
             cors_origins=tuple(
                 origin.strip()
@@ -34,5 +38,9 @@ class AppConfig:
             default_admin_email=os.getenv("DEFAULT_ADMIN_EMAIL", cls.default_admin_email),
             default_admin_password=os.getenv(
                 "DEFAULT_ADMIN_PASSWORD", cls.default_admin_password
+            ),
+            super_admin_email=os.getenv("SUPER_ADMIN_EMAIL", cls.super_admin_email),
+            super_admin_password=os.getenv(
+                "SUPER_ADMIN_PASSWORD", cls.super_admin_password
             ),
         )

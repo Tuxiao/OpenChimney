@@ -172,6 +172,15 @@ class MessageIn(BaseModel):
     metadata_json: dict[str, Any] = {}
 
 
+class MessageAttachmentOut(ORMModel):
+    id: int
+    file_name: str
+    content_type: Optional[str] = None
+    url: str
+    size_bytes: Optional[int] = None
+    created_at: datetime
+
+
 class MessageOut(ORMModel):
     id: int
     conversation_id: int
@@ -179,6 +188,7 @@ class MessageOut(ORMModel):
     role: str
     content: str
     metadata_json: dict[str, Any]
+    attachments: list[MessageAttachmentOut] = []
     created_at: datetime
 
 

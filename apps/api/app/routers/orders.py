@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import current_user
+from ..deps import current_user, has_super_admin_role
 from ..models import Member, Order, OrderItem, User
 from ..schemas import OrderIn, OrderOut, OrderPatch
 
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/orders", tags=["orders"])
 
 
 def is_admin(user: User) -> bool:
-    return "admin" in {role.name for role in user.roles}
+    return has_super_admin_role(user)
 
 
 def total_for(items: list[OrderItem]) -> float:

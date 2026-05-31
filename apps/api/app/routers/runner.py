@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import mimetypes
+import re
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_runner_key
 from ..hermes_settings import ensure_hermes_setting, merged_hermes_config, runner_hermes_config
-from ..models import Message, RunnerJob, RunnerJobEvent, RunnerNode
+from ..models import Message, MessageAttachment, RunnerJob, RunnerJobEvent, RunnerNode
 from ..schemas import (
     HermesRunnerConfigOut,
     RunnerClaimIn,
@@ -176,6 +181,7 @@ def job_heartbeat(
 def complete_job(
     job_id: int,
     payload: RunnerCompleteIn,
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     _runner_key: Annotated[None, Depends(require_runner_key)],
 ) -> RunnerJob:
@@ -198,25 +204,89 @@ def complete_job(
         and conversation_id is not None
         and isinstance(assistant_message.get("content"), str)
     ):
-        db.add(
-            Message(
-                conversation_id=int(conversation_id),
-                role=str(assistant_message.get("role") or "assistant"),
-                content=assistant_message["content"],
-                metadata_json={
-                    "runner_job_id": job.id,
-                    "provider": payload.result_json.get("provider"),
-                    "model": payload.result_json.get("model"),
-                    "usage": payload.result_json.get("usage"),
-                },
-            )
+        message = Message(
+            conversation_id=int(conversation_id),
+            role=str(assistant_message.get("role") or "assistant"),
+            content=assistant_message["content"],
+            metadata_json={
+                "runner_job_id": job.id,
+                "provider": payload.result_json.get("provider"),
+                "model": payload.result_json.get("model"),
+                "usage": payload.result_json.get("usage"),
+            },
         )
+        db.add(message)
+        db.flush()
+        for artifact in _decode_artifacts(payload.result_json.get("artifacts")):
+            _store_message_artifact(request, db, message, artifact)
     if job.task is not None:
         job.task.status = "completed"
     add_job_event(db, job, "completed", data_json=payload.result_json)
     db.commit()
     db.refresh(job)
     return job
+
+
+def _decode_artifacts(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+
+    artifacts: list[dict[str, object]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        encoded = item.get("data_base64")
+        if not isinstance(encoded, str) or not encoded:
+            continue
+        try:
+            data = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            continue
+        content_type = item.get("content_type")
+        artifacts.append(
+            {
+                "file_name": _safe_file_name(item.get("file_name") or item.get("name") or "artifact.bin"),
+                "content_type": str(content_type).strip() if content_type else None,
+                "data": data,
+            }
+        )
+    return artifacts
+
+
+def _store_message_artifact(
+    request: Request,
+    db: Session,
+    message: Message,
+    artifact: dict[str, object],
+) -> MessageAttachment:
+    file_name = str(artifact["file_name"])
+    data = artifact["data"]
+    if not isinstance(data, bytes):
+        raise TypeError("artifact data must be bytes")
+    content_type = artifact.get("content_type") or mimetypes.guess_type(file_name)[0]
+
+    attachment = MessageAttachment(
+        message_id=message.id,
+        file_name=file_name,
+        content_type=str(content_type) if content_type else None,
+        url="",
+        size_bytes=len(data),
+    )
+    db.add(attachment)
+    db.flush()
+
+    storage_root = Path(request.app.state.config.artifact_storage_dir).resolve()
+    target_dir = storage_root / str(attachment.id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / file_name).write_bytes(data)
+    attachment.url = f"/api/attachments/{attachment.id}/download"
+    return attachment
+
+
+def _safe_file_name(value: object) -> str:
+    name = Path(str(value)).name.strip() or "artifact.bin"
+    name = re.sub(r"[^A-Za-z0-9_.() -]+", "-", name).strip(" .")
+    return name[:180] or "artifact.bin"
 
 
 @router.post("/jobs/{job_id}/fail", response_model=RunnerJobOut)

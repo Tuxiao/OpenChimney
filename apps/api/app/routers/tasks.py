@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import current_user
+from ..deps import current_user, has_super_admin_role
 from ..models import Conversation, Message, RunnerJob, Task, User
 from ..schemas import MessageIn, TaskIn, TaskMessageOut, TaskOut, TaskPatch
 
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
 
 def is_admin(user: User) -> bool:
-    return "admin" in {role.name for role in user.roles}
+    return has_super_admin_role(user)
 
 
 def query_task(db: Session, user: User, task_id: int) -> Task:

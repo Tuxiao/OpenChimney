@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import current_user
+from ..deps import current_user, has_super_admin_role
 from ..models import Member, User
 from ..schemas import MemberIn, MemberOut, MemberPatch
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/members", tags=["members"])
 
 def query_member(db: Session, user: User, member_id: int) -> Member:
     query = db.query(Member).filter(Member.id == member_id)
-    if "admin" not in {role.name for role in user.roles}:
+    if not has_super_admin_role(user):
         query = query.filter(Member.owner_user_id == user.id)
     member = query.one_or_none()
     if member is None:
@@ -29,7 +29,7 @@ def list_members(
     user: Annotated[User, Depends(current_user)],
 ) -> list[Member]:
     query = db.query(Member).order_by(Member.created_at.desc())
-    if "admin" not in {role.name for role in user.roles}:
+    if not has_super_admin_role(user):
         query = query.filter(Member.owner_user_id == user.id)
     return query.all()
 

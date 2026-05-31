@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import AppConfig
 from .db import create_db_engine, create_session_factory
 from .migrations import init_schema, seed_data
-from .routers import admin, auth, conversations, members, orders, runner, tasks
+from .routers import admin, attachments, auth, conversations, members, orders, runner, tasks
 
 
 def create_app(config: Optional[AppConfig] = None) -> FastAPI:
@@ -48,6 +48,7 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
     app.include_router(orders.router)
     app.include_router(tasks.router)
     app.include_router(conversations.router)
+    app.include_router(attachments.router)
     app.include_router(admin.router)
     app.include_router(runner.router)
     return app

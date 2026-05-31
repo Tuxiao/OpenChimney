@@ -46,13 +46,14 @@ Path: `apps/web`
 Implemented in `apps/api/app/routers/auth.py` and surfaced in
 `apps/web/src/App.tsx`.
 
-- Email/password login exists for the seeded admin account.
+- Email/password login exists for the separately seeded super admin account.
 - Phone + SMS login auto-registers first-time phone users.
 - Development SMS responses include `dev_code` for local copy/paste testing.
 - Phone + password login works after a user sets a password.
 - First phone login redirects to password setup when the account has no
   password.
-- Authenticated frontend routes show user/admin navigation and sign out.
+- User console and super admin console are separated by URL: `/console`,
+  `/admin/login`, and `/admin`.
 
 ### User Console
 
@@ -120,12 +121,12 @@ Important files:
 
 - `app/main.py`: app factory, CORS, router mounting, `/api/health`.
 - `app/config.py`: env config for SQLite path, runner key, CORS, session TTL,
-  schema/seed flags, and default admin.
+  schema/seed flags, default user, and super admin.
 - `app/models.py`: users, roles, sessions, phone login codes, members, orders,
   order items, tasks, conversations, messages, attachments, runner nodes, runner
   jobs, runner job events, audit logs, and app settings.
-- `app/migrations.py`: creates schema and seeds roles, admin account, baseline
-  settings, and Hermes config.
+- `app/migrations.py`: creates schema and seeds roles, default user account,
+  super admin account, baseline settings, and Hermes config.
 - `app/hermes_settings.py`: default/merged/public/runner Hermes config helpers.
 - `app/routers/auth.py`: email auth, phone auth, password setup, sessions.
 - `app/routers/members.py`: member CRUD.

@@ -1,15 +1,20 @@
 import { auditEvents, health, hermesConfig, members, orders, runnerJobs, tasks } from "../data/mockData";
 import type {
+  ApiTask,
   AuditEvent,
   AuthResponse,
+  Conversation,
   HealthSnapshot,
   HermesConfig,
   HermesConfigInput,
   Member,
+  MessageAttachment,
   Order,
   PhoneCodeResponse,
   RunnerJob,
-  Task
+  Task,
+  TaskMessageResponse,
+  TaskPriority
 } from "../types/domain";
 
 type ApiOptions = {
@@ -37,7 +42,7 @@ export class ApiClient {
 
   constructor(options: ApiOptions = {}) {
     this.baseUrl = options.baseUrl ?? import.meta.env.VITE_API_BASE_URL ?? "";
-    this.fetcher = options.fetcher ?? fetch;
+    this.fetcher = options.fetcher ?? window.fetch.bind(window);
     this.token = options.token;
     this.useMocks = !this.baseUrl && (import.meta.env.DEV || import.meta.env.VITE_API_MOCKS === "1");
   }
@@ -48,6 +53,52 @@ export class ApiClient {
 
   async tasks(): Promise<Task[]> {
     return this.get("/api/tasks", tasks);
+  }
+
+  async apiTasks(): Promise<ApiTask[]> {
+    return this.get("/api/tasks", []);
+  }
+
+  async createTask(payload: { title: string; description?: string; priority?: TaskPriority }): Promise<ApiTask> {
+    return this.post("/api/tasks", {
+      title: payload.title,
+      description: payload.description ?? "",
+      priority: payload.priority ?? "normal",
+      status: "open"
+    });
+  }
+
+  async sendTaskMessage(taskId: number, content: string): Promise<TaskMessageResponse> {
+    return this.post(`/api/tasks/${taskId}/messages`, {
+      role: "user",
+      content,
+      metadata_json: {}
+    });
+  }
+
+  async conversations(): Promise<Conversation[]> {
+    return this.get("/api/conversations", []);
+  }
+
+  async downloadAttachment(attachment: MessageAttachment): Promise<void> {
+    const response = await this.fetcher(`${this.baseUrl}${attachment.url}`, {
+      headers: {
+        Accept: attachment.content_type || "application/octet-stream",
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`Download failed with ${response.status}`);
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = attachment.file_name;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
   }
 
   async runnerQueue(): Promise<RunnerJob[]> {
@@ -217,7 +268,10 @@ function mockEmailAuth(email: string): AuthResponse {
       is_active: true,
       has_password: true,
       requires_password_setup: false,
-      roles: [{ id: 2, name: "admin" }]
+      roles: [
+        { id: 1, name: "user" },
+        { id: 2, name: "super_admin" }
+      ]
     },
     token: {
       access_token: "local-admin-token",

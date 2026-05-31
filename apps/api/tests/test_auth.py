@@ -23,13 +23,30 @@ def test_register_me_logout_flow(client):
     assert after_logout.status_code == 401
 
 
-def test_seeded_admin_can_access_overview(client):
+def test_seeded_default_admin_email_is_not_super_admin(client):
     login = client.post(
         "/api/auth/login",
         json={"email": "admin@example.com", "password": "admin1234"},
     )
     assert login.status_code == 200, login.text
     token = login.json()["token"]["access_token"]
+    assert [role["name"] for role in login.json()["user"]["roles"]] == ["user"]
+
+    overview = client.get("/api/admin/overview", headers=auth_headers(token))
+    assert overview.status_code == 403
+
+
+def test_seeded_super_admin_can_access_overview(client):
+    login = client.post(
+        "/api/auth/login",
+        json={"email": "superadmin@example.com", "password": "superadmin1234"},
+    )
+    assert login.status_code == 200, login.text
+    token = login.json()["token"]["access_token"]
+    assert {role["name"] for role in login.json()["user"]["roles"]} == {
+        "user",
+        "super_admin",
+    }
 
     overview = client.get("/api/admin/overview", headers=auth_headers(token))
     assert overview.status_code == 200

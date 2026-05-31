@@ -19,6 +19,8 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
             runner_key="test-runner-key",
             default_admin_email="admin@example.com",
             default_admin_password="admin1234",
+            super_admin_email="superadmin@example.com",
+            super_admin_password="superadmin1234",
         )
     )
     with TestClient(app) as test_client:

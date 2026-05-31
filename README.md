@@ -193,6 +193,7 @@ Edit at least these values before exposing the stack:
 SECRET_KEY
 RUNNER_API_KEY
 DEFAULT_ADMIN_PASSWORD
+SUPER_ADMIN_PASSWORD
 HERMES_API_KEY or provider-specific API keys
 ```
 
@@ -214,6 +215,9 @@ Health checks:
 curl http://127.0.0.1:${WEB_PORT:-80}/health
 curl http://127.0.0.1:${WEB_PORT:-80}/api/health
 ```
+
+User console is served at `/console`. Super admin access uses the separate
+`/admin/login` and `/admin` URLs.
 
 Back up SQLite:
 

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import html
 import json
 import os
 import re
 import threading
+import zipfile
 from datetime import datetime, timezone
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager
@@ -150,7 +153,7 @@ class HermesAgentRuntime:
                     run_kwargs["persist_user_message"] = request.persist_user_message
                 raw_result = agent.run_conversation(**run_kwargs)
 
-        return self._normalize_result(job, request, raw_result)
+        return self._normalize_result(job, request, raw_result, workspace)
 
     def _load_agent_factory(self) -> AgentFactory:
         try:
@@ -501,8 +504,16 @@ class HermesAgentRuntime:
         base.mkdir(parents=True, exist_ok=True)
         return base
 
-    def _normalize_result(self, job: Job, request: "HermesRunRequest", raw_result: object) -> dict[str, Any]:
+    def _normalize_result(
+        self,
+        job: Job,
+        request: "HermesRunRequest",
+        raw_result: object,
+        workspace: Path,
+    ) -> dict[str, Any]:
         final_response = self._extract_final_response(raw_result)
+        self._ensure_requested_artifacts(request, final_response, workspace)
+        artifacts = self._collect_workspace_artifacts(workspace)
         assistant_message = {"role": "assistant", "content": final_response}
         messages = [*request.messages, assistant_message]
 
@@ -526,10 +537,45 @@ class HermesAgentRuntime:
             "model": request.model,
             "assistant_message": assistant_message,
             "messages": messages,
-            "artifacts": [],
+            "artifacts": artifacts,
             "usage": self._extract_usage(raw_result),
             "metadata": metadata,
         }
+
+    def _ensure_requested_artifacts(self, request: "HermesRunRequest", final_response: str, workspace: Path) -> None:
+        if not _looks_like_presentation_request(request.messages, request.prompt):
+            return
+        artifacts_dir = workspace / "artifacts"
+        if any(path.suffix.lower() in {".ppt", ".pptx"} for path in artifacts_dir.iterdir() if path.is_file()):
+            return
+        title = _presentation_title(request.messages)
+        slides = _slides_from_response(title, final_response)
+        target = artifacts_dir / "hermes-agent-introduction.pptx"
+        _write_minimal_pptx(target, slides)
+
+    def _collect_workspace_artifacts(self, workspace: Path) -> list[dict[str, Any]]:
+        artifacts_dir = workspace / "artifacts"
+        if not artifacts_dir.is_dir():
+            return []
+
+        artifacts: list[dict[str, Any]] = []
+        for path in sorted(artifacts_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            relative_path = path.relative_to(artifacts_dir)
+            if any(part.startswith(".") for part in relative_path.parts):
+                continue
+            data = path.read_bytes()
+            artifacts.append(
+                {
+                    "file_name": path.name,
+                    "relative_path": str(relative_path),
+                    "content_type": _content_type_for(path),
+                    "size_bytes": len(data),
+                    "data_base64": base64.b64encode(data).decode("ascii"),
+                }
+            )
+        return artifacts
 
     @staticmethod
     def _extract_final_response(raw_result: object) -> str:
@@ -694,6 +740,244 @@ def _temporary_process_context(cwd: Path, env: Mapping[str, str]):
 def _safe_path_part(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-")
     return cleaned or "default"
+
+
+def _looks_like_presentation_request(messages: list[dict[str, str]], prompt: str) -> bool:
+    text = " ".join([prompt, *(message.get("content", "") for message in messages)]).lower()
+    return any(marker in text for marker in ("ppt", "pptx", "presentation", "slide deck", "slides"))
+
+
+def _presentation_title(messages: list[dict[str, str]]) -> str:
+    for message in reversed(messages):
+        if message.get("role") == "user" and message.get("content"):
+            content = " ".join(message["content"].split())
+            if len(content) > 72:
+                return f"{content[:69]}..."
+            return content
+    return "Hermes Agent Introduction"
+
+
+def _slides_from_response(title: str, final_response: str) -> list[tuple[str, list[str]]]:
+    lines = _clean_slide_lines(final_response)
+    if not lines:
+        lines = [
+            "Hermes Agent is introduced as the runtime behind OpenChimney jobs.",
+            "The runner works from an isolated task workspace.",
+            "Generated files are saved under the task artifacts directory.",
+        ]
+
+    sections = [
+        title,
+        "What Hermes Agent Is",
+        "How To Use It",
+        "Runner Workspace",
+        "Operational Notes",
+        "Next Steps",
+    ]
+    slides: list[tuple[str, list[str]]] = []
+    cursor = 0
+    for index, section_title in enumerate(sections):
+        if index == 0:
+            bullets = [lines[0], "Generated by OpenChimney runner", "Artifact: PPTX download"]
+        else:
+            bullets = lines[cursor : cursor + 4]
+            cursor += 4
+            if not bullets:
+                bullets = lines[-4:]
+        slides.append((section_title, bullets[:5]))
+    return slides
+
+
+def _clean_slide_lines(text: str) -> list[str]:
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        line = re.sub(r"^#{1,6}\s*", "", line)
+        line = re.sub(r"^[-*+]\s*", "", line)
+        line = re.sub(r"^\d+[.)]\s*", "", line)
+        line = line.strip()
+        if len(line) < 4 or line.startswith("```"):
+            continue
+        if len(line) > 180:
+            line = f"{line[:177]}..."
+        lines.append(line)
+    return lines[:30]
+
+
+def _content_type_for(path: Path) -> str:
+    if path.suffix.lower() == ".pptx":
+        return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    if path.suffix.lower() in {".md", ".txt"}:
+        return "text/plain; charset=utf-8"
+    if path.suffix.lower() == ".html":
+        return "text/html; charset=utf-8"
+    return "application/octet-stream"
+
+
+def _write_minimal_pptx(path: Path, slides: list[tuple[str, list[str]]]) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    slide_overrides = "\n".join(
+        f'<Override PartName="/ppt/slides/slide{i}.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
+        for i in range(1, len(slides) + 1)
+    )
+    slide_ids = "\n".join(
+        f'<p:sldId id="{255 + i}" r:id="rId{i}"/>' for i in range(1, len(slides) + 1)
+    )
+    presentation_rels = "\n".join(
+        f'<Relationship Id="rId{i}" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" '
+        f'Target="slides/slide{i}.xml"/>'
+        for i in range(1, len(slides) + 1)
+    )
+    master_rid = len(slides) + 1
+
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as pptx:
+        pptx.writestr(
+            "[Content_Types].xml",
+            f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
+  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
+  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+  {slide_overrides}
+</Types>""",
+        )
+        pptx.writestr(
+            "_rels/.rels",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>""",
+        )
+        pptx.writestr(
+            "docProps/core.xml",
+            f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>{_xml(slides[0][0])}</dc:title>
+  <dc:creator>OpenChimney Runner</dc:creator>
+  <cp:lastModifiedBy>OpenChimney Runner</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">{now}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">{now}</dcterms:modified>
+</cp:coreProperties>""",
+        )
+        pptx.writestr(
+            "docProps/app.xml",
+            f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>OpenChimney</Application>
+  <PresentationFormat>On-screen Show</PresentationFormat>
+  <Slides>{len(slides)}</Slides>
+</Properties>""",
+        )
+        pptx.writestr(
+            "ppt/presentation.xml",
+            f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId{master_rid}"/></p:sldMasterIdLst>
+  <p:sldIdLst>{slide_ids}</p:sldIdLst>
+  <p:sldSz cx="12192000" cy="6858000" type="screen16x9"/>
+  <p:notesSz cx="6858000" cy="9144000"/>
+</p:presentation>""",
+        )
+        pptx.writestr(
+            "ppt/_rels/presentation.xml.rels",
+            f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  {presentation_rels}
+  <Relationship Id="rId{master_rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
+  <Relationship Id="rId{master_rid + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>
+</Relationships>""",
+        )
+        pptx.writestr(
+            "ppt/slideMasters/slideMaster1.xml",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>
+  <p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>
+  <p:txStyles><p:titleStyle/><p:bodyStyle/><p:otherStyle/></p:txStyles>
+</p:sldMaster>""",
+        )
+        pptx.writestr(
+            "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+</Relationships>""",
+        )
+        pptx.writestr(
+            "ppt/slideLayouts/slideLayout1.xml",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank">
+  <p:cSld name="Blank"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld>
+</p:sldLayout>""",
+        )
+        pptx.writestr(
+            "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
+</Relationships>""",
+        )
+        pptx.writestr("ppt/theme/theme1.xml", _minimal_theme_xml())
+        for index, (slide_title, bullets) in enumerate(slides, start=1):
+            pptx.writestr(f"ppt/slides/slide{index}.xml", _slide_xml(slide_title, bullets))
+            pptx.writestr(
+                f"ppt/slides/_rels/slide{index}.xml.rels",
+                """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+</Relationships>""",
+            )
+
+
+def _slide_xml(title: str, bullets: list[str]) -> str:
+    bullet_paragraphs = "\n".join(
+        f'<a:p><a:pPr marL="342900" indent="-228600"><a:buChar char="•"/></a:pPr>'
+        f'<a:r><a:rPr lang="en-US" sz="2400"/><a:t>{_xml(bullet)}</a:t></a:r></a:p>'
+        for bullet in bullets
+    )
+    return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:bg><p:bgPr><a:solidFill><a:srgbClr val="F8FAFC"/></a:solidFill></p:bgPr></p:bg>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>
+      <p:sp><p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="609600" y="457200"/><a:ext cx="10972800" cy="914400"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="3600" b="1"/><a:t>{_xml(title)}</a:t></a:r></a:p></p:txBody></p:sp>
+      <p:sp><p:nvSpPr><p:cNvPr id="3" name="Body"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="914400" y="1676400"/><a:ext cx="10363200" cy="4267200"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/>{bullet_paragraphs}</p:txBody></p:sp>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:sld>"""
+
+
+def _minimal_theme_xml() -> str:
+    return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="OpenChimney">
+  <a:themeElements>
+    <a:clrScheme name="OpenChimney">
+      <a:dk1><a:srgbClr val="111827"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1>
+      <a:dk2><a:srgbClr val="334155"/></a:dk2><a:lt2><a:srgbClr val="F8FAFC"/></a:lt2>
+      <a:accent1><a:srgbClr val="2563EB"/></a:accent1><a:accent2><a:srgbClr val="059669"/></a:accent2>
+      <a:accent3><a:srgbClr val="D97706"/></a:accent3><a:accent4><a:srgbClr val="DC2626"/></a:accent4>
+      <a:accent5><a:srgbClr val="7C3AED"/></a:accent5><a:accent6><a:srgbClr val="0891B2"/></a:accent6>
+      <a:hlink><a:srgbClr val="2563EB"/></a:hlink><a:folHlink><a:srgbClr val="7C3AED"/></a:folHlink>
+    </a:clrScheme>
+    <a:fontScheme name="OpenChimney"><a:majorFont><a:latin typeface="Aptos Display"/></a:majorFont><a:minorFont><a:latin typeface="Aptos"/></a:minorFont></a:fontScheme>
+    <a:fmtScheme name="OpenChimney"><a:fillStyleLst/><a:lnStyleLst/><a:effectStyleLst/><a:bgFillStyleLst/></a:fmtScheme>
+  </a:themeElements>
+</a:theme>"""
+
+
+def _xml(value: str) -> str:
+    return html.escape(value, quote=False)
 
 
 def _workspace_context() -> str:

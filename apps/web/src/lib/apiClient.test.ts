@@ -36,12 +36,12 @@ describe("ApiClient", () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ token: { access_token: "token" } }), { status: 200 })) as unknown as typeof fetch;
     const client = new ApiClient({ baseUrl: "http://localhost:8000", fetcher });
 
-    await client.loginWithEmail("admin@example.com", "admin1234");
+    await client.loginWithEmail("superadmin@example.com", "superadmin1234");
 
     expect(fetcher).toHaveBeenCalledWith("http://localhost:8000/api/auth/login", {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "admin@example.com", password: "admin1234" })
+      body: JSON.stringify({ email: "superadmin@example.com", password: "superadmin1234" })
     });
   });
 
